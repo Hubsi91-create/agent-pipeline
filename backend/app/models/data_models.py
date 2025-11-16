@@ -1,11 +1,11 @@
 """
 Pydantic Data Models for 11-Agent Music Video Production System
-Phase A: Models for Agent 1, Agent 2, and QC Processor
+Complete Models for All 11 Agents
 """
 
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import uuid
 
 
