@@ -11,7 +11,10 @@ from app.models.data_models import (
     OrchestrationRequest,
     AudioUploadRequest,
     QCRequest,
-    APIResponse
+    APIResponse,
+    SunoPromptRequest,
+    SunoPromptResponse,
+    FewShotLearningStats
 )
 from app.agents.agent_1_project_manager.service import agent1_service
 from app.agents.agent_2_qc.service import agent2_service
@@ -21,6 +24,7 @@ from app.agents.agent_5_style_anchors.service import agent5_service
 from app.agents.agent_6_veo_prompter.service import agent6_service
 from app.agents.agent_7_runway_prompter.service import agent7_service
 from app.agents.agent_8_refiner.service import agent8_service
+from app.agents.suno_prompt_generator.service import suno_generator_service
 from app.utils.logger import setup_logger
 
 logger = setup_logger("API")
@@ -260,3 +264,77 @@ async def health_check():
         "service": "Music Video Production System",
         "version": "1.0.0"
     }
+
+
+# ==================== Suno Prompt Generation (Few-Shot Learning) ====================
+
+@router.post("/suno/generate", response_model=APIResponse)
+async def generate_suno_prompt(request: SunoPromptRequest):
+    """
+    Generate Suno v5 prompt using Dynamic Few-Shot Learning
+
+    Process:
+    1. Fetches 3-5 best practice examples from ApprovedBestPractices
+    2. Injects them into Gemini prompt (in-context learning)
+    3. Generates new prompt following learned patterns
+    4. Returns prompt (status: PENDING_QC)
+    """
+    try:
+        prompt_response = await suno_generator_service.generate_prompt(request)
+
+        return APIResponse(
+            success=True,
+            message=f"Suno prompt generated using {prompt_response.few_shot_examples_used} examples",
+            data=prompt_response.model_dump()
+        )
+    except Exception as e:
+        logger.error(f"Failed to generate Suno prompt: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/suno/{prompt_id}/qc", response_model=APIResponse)
+async def qc_suno_prompt(prompt_id: str, prompt_data: SunoPromptResponse):
+    """
+    QC review for Suno prompt with auto-learning
+
+    Auto-Learning Mechanism:
+    - If prompt scores >= 7.0, it's automatically added to ApprovedBestPractices
+    - This makes it available as a Few-Shot example for future generations
+    - The system "learns" and improves with every high-quality prompt
+    """
+    try:
+        qc_feedback = await agent2_service.review_suno_prompt(
+            prompt_data,
+            auto_add_to_best_practices=True  # Enable auto-learning
+        )
+
+        return APIResponse(
+            success=True,
+            message=f"QC complete: {qc_feedback.qc_status}",
+            data=qc_feedback.model_dump()
+        )
+    except Exception as e:
+        logger.error(f"Suno QC failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/suno/learning-stats", response_model=FewShotLearningStats)
+async def get_learning_stats():
+    """
+    Get Few-Shot Learning statistics
+
+    Shows:
+    - Total number of approved examples in knowledge base
+    - Average quality score
+    - Distribution by genre
+    - Recent additions (last 24h)
+    - Top performing genres
+
+    This shows how the system is "learning" over time
+    """
+    try:
+        stats = await suno_generator_service.get_learning_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"Failed to get learning stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

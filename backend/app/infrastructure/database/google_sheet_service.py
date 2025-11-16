@@ -21,6 +21,10 @@ SHEET_A6_VEO_PROMPTS = "A6_VeoPrompts_DB"
 SHEET_A7_RUNWAY_PROMPTS = "A7_RunwayPrompts_DB"
 SHEET_A8_REFINEMENTS = "A8_Refinements_DB"
 
+# Suno Prompt Generation Sheets
+SHEET_SUNO_PROMPTS = "Suno_Prompts_DB"
+SHEET_APPROVED_BEST_PRACTICES = "ApprovedBestPractices"  # Few-Shot Learning Knowledge Base
+
 
 class GoogleSheetService:
     """Singleton service for Google Sheets operations"""
@@ -84,7 +88,9 @@ class GoogleSheetService:
             SHEET_A5_STYLES,
             SHEET_A6_VEO_PROMPTS,
             SHEET_A7_RUNWAY_PROMPTS,
-            SHEET_A8_REFINEMENTS
+            SHEET_A8_REFINEMENTS,
+            SHEET_SUNO_PROMPTS,
+            SHEET_APPROVED_BEST_PRACTICES
         ]
 
         existing_sheets = [ws.title for ws in self.spreadsheet.worksheets()]

@@ -1,12 +1,18 @@
 """
 Agent 2: QC Agent
 Quality control for scenes, prompts, and styles
+Includes auto-learning feedback loop for Few-Shot Learning
 """
 
 from typing import Optional
-from app.models.data_models import QCFeedback, QCRequest
+from datetime import datetime
+from app.models.data_models import QCFeedback, QCRequest, SunoPromptResponse, SunoPromptExample
 from app.infrastructure.external_services.gemini_service import gemini_service
-from app.infrastructure.database.google_sheet_service import google_sheet_service, SHEET_A2_QC_FEEDBACK
+from app.infrastructure.database.google_sheet_service import (
+    google_sheet_service,
+    SHEET_A2_QC_FEEDBACK,
+    SHEET_APPROVED_BEST_PRACTICES
+)
 from app.utils.logger import setup_logger
 
 logger = setup_logger("Agent2_QC")
@@ -116,6 +122,186 @@ Be specific and actionable in your feedback.
         ]
 
         return await google_sheet_service.append_row(SHEET_A2_QC_FEEDBACK, data)
+
+    async def review_suno_prompt(
+        self,
+        suno_prompt: SunoPromptResponse,
+        auto_add_to_best_practices: bool = True
+    ) -> QCFeedback:
+        """
+        Review a Suno prompt with auto-learning feedback loop
+
+        This method implements the "learning" mechanism:
+        1. QC reviews the prompt
+        2. Extracts a quality score (0-10)
+        3. If score >= 7.0 AND auto_add_to_best_practices is True:
+           -> Automatically adds to ApprovedBestPractices sheet
+           -> This makes it available for Few-Shot Learning in future generations
+
+        Args:
+            suno_prompt: The Suno prompt to review
+            auto_add_to_best_practices: Auto-add if high quality (default: True)
+
+        Returns:
+            QC feedback with quality score
+        """
+        logger.info(f"QC reviewing Suno prompt {suno_prompt.id}")
+
+        # Create QC prompt for Gemini
+        qc_prompt = f"""
+You are a quality control expert for Suno v5 music prompts.
+
+Evaluate the following Suno prompt on a scale of 0-10:
+
+PROMPT:
+{suno_prompt.prompt_text}
+
+CONTEXT:
+- Genre: {suno_prompt.genre}
+- Mood: {suno_prompt.mood or 'Not specified'}
+- Tempo: {suno_prompt.tempo or 'Not specified'}
+
+EVALUATION CRITERIA (score each 0-10):
+1. Structure clarity (proper [Verse], [Chorus], [Bridge] markers)
+2. Imagery and sensory details
+3. Emotional impact
+4. Language quality and flow
+5. Genre appropriateness
+6. Originality
+7. Commercial viability
+
+Provide your response in this EXACT format:
+SCORE: [0-10 number]
+FEEDBACK: [Your detailed feedback]
+STRENGTHS: [Bullet points]
+IMPROVEMENTS: [Bullet points if score < 8]
+
+Be honest and critical. Only scores >= 7 will be used for training.
+"""
+
+        # Get Gemini's review
+        ai_response = await gemini_service.generate_text(qc_prompt, temperature=0.3)
+
+        # Parse response
+        quality_score, feedback, suggestions = self._parse_suno_qc_response(ai_response)
+
+        # Determine status
+        if quality_score >= 8.0:
+            qc_status = "APPROVED"
+        elif quality_score >= 6.0:
+            qc_status = "NEEDS_REVISION"
+        else:
+            qc_status = "REJECTED"
+
+        # Create QC feedback
+        qc_feedback = QCFeedback(
+            project_id=suno_prompt.metadata.get("project_id", "suno-standalone"),
+            target_id=suno_prompt.id,
+            target_type="suno_prompt",
+            qc_status=qc_status,
+            feedback=f"Quality Score: {quality_score}/10. {feedback}",
+            suggestions=suggestions
+        )
+
+        # Save to QC sheet
+        await self._save_to_sheets(qc_feedback)
+
+        # AUTO-LEARNING FEEDBACK LOOP
+        # If high quality, add to ApprovedBestPractices for Few-Shot Learning
+        if quality_score >= 7.0 and auto_add_to_best_practices:
+            await self._add_to_best_practices(suno_prompt, quality_score)
+            logger.info(f"✓ Added prompt {suno_prompt.id} to ApprovedBestPractices (Score: {quality_score})")
+
+        logger.info(f"QC complete: {qc_status} (Score: {quality_score}/10)")
+        return qc_feedback
+
+    def _parse_suno_qc_response(self, response: str) -> tuple[float, str, list[str]]:
+        """Parse Gemini's Suno QC response to extract score and feedback"""
+        lines = response.strip().split('\n')
+
+        quality_score = 5.0  # Default middle score
+        feedback = ""
+        suggestions = []
+
+        for line in lines:
+            line = line.strip()
+
+            # Extract score
+            if line.startswith("SCORE:"):
+                score_text = line.replace("SCORE:", "").strip()
+                try:
+                    # Handle formats like "8.5/10" or just "8.5"
+                    score_text = score_text.split('/')[0].strip()
+                    quality_score = float(score_text)
+                    quality_score = max(0.0, min(10.0, quality_score))  # Clamp 0-10
+                except:
+                    pass
+
+            # Extract feedback
+            elif line.startswith("FEEDBACK:"):
+                feedback = line.replace("FEEDBACK:", "").strip()
+
+            # Extract suggestions
+            elif line.startswith("IMPROVEMENTS:") or line.startswith("STRENGTHS:"):
+                continue  # Skip headers
+            elif line.startswith("-") or line.startswith("*"):
+                suggestions.append(line.lstrip("-* ").strip())
+
+        if not feedback:
+            feedback = response  # Use full response if parsing fails
+
+        return quality_score, feedback, suggestions
+
+    async def _add_to_best_practices(
+        self,
+        suno_prompt: SunoPromptResponse,
+        quality_score: float
+    ) -> bool:
+        """
+        Add high-quality prompt to ApprovedBestPractices sheet
+
+        This is the "learning" mechanism - excellent prompts become
+        Few-Shot examples for future generations.
+        """
+        try:
+            # Create SunoPromptExample
+            example = SunoPromptExample(
+                id=suno_prompt.id,
+                prompt_text=suno_prompt.prompt_text,
+                genre=suno_prompt.genre,
+                quality_score=quality_score,
+                performance_metrics=suno_prompt.metadata.get("performance", {}),
+                tags=[suno_prompt.mood or "", suno_prompt.tempo or ""],
+                created_at=datetime.utcnow(),
+                source="qc_approved"
+            )
+
+            # Save to ApprovedBestPractices sheet
+            data = [
+                example.id,
+                example.prompt_text[:500],  # Truncate for sheet
+                example.genre,
+                example.quality_score,
+                ",".join(example.tags),
+                example.source,
+                example.created_at.isoformat()
+            ]
+
+            success = await google_sheet_service.append_row(
+                SHEET_APPROVED_BEST_PRACTICES,
+                data
+            )
+
+            if success:
+                logger.info(f"✓ Prompt added to knowledge base for Few-Shot Learning")
+            else:
+                logger.warning(f"Failed to add prompt to ApprovedBestPractices")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Failed to add to best practices: {e}")
+            return False
 
 
 # Singleton instance

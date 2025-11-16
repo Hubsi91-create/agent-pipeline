@@ -231,3 +231,49 @@ class ErrorResponse(BaseModel):
     error: str
     details: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ==================== Suno Prompt Generation (Dynamic Few-Shot Learning) ====================
+
+class SunoPromptExample(BaseModel):
+    """Best practice example for Few-Shot Learning"""
+    id: str = Field(default_factory=new_id)
+    prompt_text: str
+    genre: str
+    quality_score: float  # 0-10 scale
+    performance_metrics: Dict[str, Any] = Field(default_factory=dict)  # plays, likes, etc.
+    tags: List[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    source: str = "generated"  # "generated", "manual", "imported"
+
+
+class SunoPromptRequest(BaseModel):
+    """Request for generating Suno prompt"""
+    target_genre: str
+    mood: Optional[str] = None
+    tempo: Optional[str] = None  # "slow", "medium", "fast"
+    style_references: List[str] = Field(default_factory=list)
+    additional_instructions: Optional[str] = None
+
+
+class SunoPromptResponse(BaseModel):
+    """Generated Suno prompt"""
+    id: str = Field(default_factory=new_id)
+    prompt_text: str
+    genre: str
+    mood: Optional[str] = None
+    tempo: Optional[str] = None
+    few_shot_examples_used: int = 0  # Number of examples used for generation
+    quality_score: Optional[float] = None  # Set after QC
+    status: str = "PENDING_QC"  # "PENDING_QC", "APPROVED", "REJECTED", "IN_BEST_PRACTICES"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FewShotLearningStats(BaseModel):
+    """Statistics about the Few-Shot Learning system"""
+    total_examples: int
+    avg_quality_score: float
+    examples_by_genre: Dict[str, int]
+    recent_additions: int  # Last 24h
+    top_performing_genres: List[str]
