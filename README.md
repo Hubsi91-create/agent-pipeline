@@ -1,428 +1,323 @@
-# 11-Agent Marketing Pipeline System
+# Music Video Production System
 
-A comprehensive marketing automation system powered by 11 specialized AI agents with Google Sheets integration.
+AI-powered music video production pipeline with 8 specialized agents and Google Sheets integration.
 
-## 🚀 Features
+## 🎬 System Overview
 
-This system consists of 11 specialized agents working together to automate your entire marketing pipeline:
+This system automates the entire music video pre-production workflow using 8 specialized AI agents:
 
-### Agent 1: Lead Generation
-- Automated lead collection from multiple sources
-- Lead scoring and categorization
-- Source tracking and analytics
+### Agent Pipeline
 
-### Agent 2: Lead Qualification
-- BANT (Budget, Authority, Need, Timeline) qualification
-- Intelligent lead scoring
-- Automated routing to sales teams
+1. **Agent 1: Project Manager** - Creates and tracks video projects
+2. **Agent 2: QC Agent** - Quality control for all outputs
+3. **Agent 3: Audio Analyzer** - Analyzes music structure, BPM, key, energy
+4. **Agent 4: Scene Breakdown** - Creates scene-by-scene breakdown
+5. **Agent 5: Style Anchors** - Defines visual style for consistency
+6. **Agent 6: Veo Prompter** - Generates prompts for Google Veo
+7. **Agent 7: Runway Prompter** - Generates prompts for Runway Gen-3
+8. **Agent 8: Prompt Refiner** - Refines prompts based on QC feedback
 
-### Agent 3: Competitor Analysis
-- Competitive intelligence gathering
-- SWOT analysis automation
-- Market positioning insights
+## 🚀 Quick Start
 
-### Agent 4: Market Research
-- Market segmentation analysis
-- Trend identification
-- Opportunity mapping
+### Prerequisites
 
-### Agent 5: Content Strategy
-- Content planning and calendar management
-- Performance tracking
-- Gap analysis
+- Python 3.10+
+- Google Cloud Project (for Gemini API & Sheets)
+- Google Sheets API credentials
 
-### Agent 6: SEO Optimization
-- Keyword research and tracking
-- Page optimization recommendations
-- Technical SEO audits
+### Installation
 
-### Agent 7: Social Media Management
-- Multi-platform post scheduling
-- Engagement tracking
-- Performance analytics
-
-### Agent 8: Email Marketing
-- Campaign management
-- A/B testing
-- Subscriber segmentation
-
-### Agent 9: Analytics & Reporting
-- Real-time analytics
-- Custom KPI tracking
-- Funnel analysis
-
-### Agent 10: Campaign Management
-- Multi-channel campaign orchestration
-- Budget tracking
-- ROI analysis
-
-### Agent 11: Report Generation
-- Automated report creation
-- Custom templates
-- Scheduled delivery
-
-## 📋 Prerequisites
-
-- Node.js >= 18.0.0
-- npm >= 9.0.0
-- Google Cloud Platform account (for Sheets integration)
-
-## 🛠️ Installation
-
-1. **Clone the repository:**
+1. **Clone and navigate:**
 ```bash
-git clone <repository-url>
-cd agent-pipeline
+cd agent-pipeline/backend
 ```
 
 2. **Install dependencies:**
 ```bash
-npm install
+pip install -r requirements.txt
 ```
 
-3. **Set up environment variables:**
+3. **Set up environment:**
 ```bash
 cp .env.example .env
+# Edit .env with your configuration
 ```
 
-Edit `.env` and configure your settings:
+Required environment variables:
 ```env
-PORT=3000
-NODE_ENV=development
-GOOGLE_SHEETS_CREDENTIALS_PATH=./credentials/google-sheets-credentials.json
-GOOGLE_SHEETS_SPREADSHEET_ID=your-spreadsheet-id
+GOOGLE_CLOUD_PROJECT_ID=your-project-id
+GOOGLE_APPLICATION_CREDENTIALS=path/to/credentials.json
+GOOGLE_SHEET_ID=your-spreadsheet-id
+GEMINI_API_KEY=your-gemini-api-key
+ENVIRONMENT=development
+API_PORT=8000
 ```
 
-4. **Set up Google Sheets (Optional):**
-   - Create a Google Cloud project
-   - Enable Google Sheets API
-   - Create service account credentials
-   - Download credentials JSON and place in `./credentials/`
-   - Create a Google Spreadsheet and share it with the service account email
-
-5. **Build the project:**
+4. **Run the application:**
 ```bash
-npm run build
+python -m app.main
 ```
 
-## 🚀 Usage
-
-### Development Mode
+or with uvicorn:
 ```bash
-npm run dev
+uvicorn app.main:app --reload --port 8000
 ```
 
-### Production Mode
-```bash
-npm start
-```
-
-The API will be available at `http://localhost:3000`
+The API will be available at `http://localhost:8000`
 
 ## 📚 API Documentation
 
-### Health Check
-```
-GET /health
+Once running, visit:
+- **Swagger UI:** http://localhost:8000/docs
+- **ReDoc:** http://localhost:8000/redoc
+
+### Key Endpoints
+
+#### Create Project
+```bash
+POST /api/v1/projects
+{
+  "name": "My Music Video",
+  "artist": "Artist Name",
+  "song_title": "Song Title"
+}
 ```
 
-### Get All Agents Data
-```
-GET /api/agents/all
-```
-
-### Agent-Specific Endpoints
-
-#### Agent 1: Lead Generation
-```
-GET  /api/agents/agent1/data
-GET  /api/agents/agent1/statistics
-POST /api/agents/agent1/leads
-POST /api/agents/agent1/generate
+#### Upload Audio
+```bash
+POST /api/v1/agent3/upload
+{
+  "project_id": "project-uuid",
+  "filename": "song.mp3"
+}
 ```
 
-#### Agent 2: Lead Qualification
-```
-GET  /api/agents/agent2/data
-GET  /api/agents/agent2/statistics
-POST /api/agents/agent2/qualify
-```
-
-#### Agent 3: Competitor Analysis
-```
-GET  /api/agents/agent3/data
-GET  /api/agents/agent3/statistics
-POST /api/agents/agent3/competitors
-POST /api/agents/agent3/analyze/:id
+#### Plan Video (Orchestration)
+```bash
+POST /api/v1/orchestration/plan-video
+{
+  "project_id": "project-uuid",
+  "generate_for_veo": true,
+  "generate_for_runway": true
+}
 ```
 
-#### Agent 4: Market Research
-```
-GET  /api/agents/agent4/data
-GET  /api/agents/agent4/statistics
-POST /api/agents/agent4/segments
-POST /api/agents/agent4/research
+#### Get Storyboard
+```bash
+GET /api/v1/storyboard/{project_id}
 ```
 
-#### Agent 5: Content Strategy
-```
-GET  /api/agents/agent5/data
-GET  /api/agents/agent5/statistics
-POST /api/agents/agent5/content
-```
+Returns complete storyboard with:
+- Project details
+- Audio analysis
+- Scene breakdown
+- Style anchors
+- Video prompts (Veo & Runway)
+- QC feedback
 
-#### Agent 6: SEO Optimization
-```
-GET  /api/agents/agent6/data
-GET  /api/agents/agent6/statistics
-POST /api/agents/agent6/keywords
-```
+## 🏗️ Architecture
 
-#### Agent 7: Social Media
 ```
-GET  /api/agents/agent7/data
-GET  /api/agents/agent7/statistics
-POST /api/agents/agent7/posts
-```
-
-#### Agent 8: Email Marketing
-```
-GET  /api/agents/agent8/data
-GET  /api/agents/agent8/statistics
-POST /api/agents/agent8/campaigns
-```
-
-#### Agent 9: Analytics
-```
-GET  /api/agents/agent9/data
-GET  /api/agents/agent9/statistics
-POST /api/agents/agent9/reports
-```
-
-#### Agent 10: Campaign Management
-```
-GET  /api/agents/agent10/data
-GET  /api/agents/agent10/statistics
-POST /api/agents/agent10/campaigns
-```
-
-#### Agent 11: Report Generation
-```
-GET  /api/agents/agent11/data
-GET  /api/agents/agent11/statistics
-POST /api/agents/agent11/reports
-```
-
-### Sync to Google Sheets
-```
-POST /api/agents/sync-sheets
+backend/
+├── app/
+│   ├── agents/                      # Agent services
+│   │   ├── agent_1_project_manager/
+│   │   ├── agent_2_qc/
+│   │   ├── agent_3_audio_analyzer/
+│   │   ├── agent_4_scene_breakdown/
+│   │   ├── agent_5_style_anchors/
+│   │   ├── agent_6_veo_prompter/
+│   │   ├── agent_7_runway_prompter/
+│   │   └── agent_8_refiner/
+│   ├── api/
+│   │   └── v1/
+│   │       └── endpoints.py         # FastAPI routes
+│   ├── infrastructure/
+│   │   ├── database/
+│   │   │   └── google_sheet_service.py
+│   │   └── external_services/
+│   │       └── gemini_service.py    # Google Gemini AI
+│   ├── models/
+│   │   └── data_models.py           # Pydantic models
+│   ├── utils/
+│   │   └── logger.py
+│   └── main.py                      # FastAPI app
+├── requirements.txt
+└── .env.example
 ```
 
 ## 📊 Google Sheets Integration
 
-The system automatically syncs data to Google Sheets with the following worksheets:
+The system uses Google Sheets as a database. Required sheets:
 
-1. Agent 1 - Leads
-2. Agent 2 - Qualified Leads
-3. Agent 3 - Competitors
-4. Agent 4 - Market Segments
-5. Agent 5 - Content
-6. Agent 6 - SEO Keywords
-7. Agent 7 - Social Posts
-8. Agent 8 - Email Campaigns
-9. Agent 9 - Analytics
-10. Agent 10 - Campaigns
-11. Agent 11 - Reports
+1. **A1_Projects_DB** - Project tracking
+2. **A2_QC_Feedback_DB** - Quality control feedback
+3. **A3_AudioAnalysis_DB** - Audio analysis results
+4. **A4_Scenes_DB** - Scene breakdown
+5. **A5_Styles_DB** - Style anchors
+6. **A6_VeoPrompts_DB** - Veo video prompts
+7. **A7_RunwayPrompts_DB** - Runway video prompts
+8. **A8_Refinements_DB** - Prompt refinements
 
-## 🏗️ Project Structure
+These sheets will be auto-created if they don't exist.
 
-```
-agent-pipeline/
-├── src/
-│   ├── api/
-│   │   └── routes/
-│   │       └── agents.routes.ts
-│   ├── config/
-│   │   └── index.ts
-│   ├── middleware/
-│   │   └── errorHandler.ts
-│   ├── services/
-│   │   ├── agents/
-│   │   │   ├── agent1.service.ts
-│   │   │   ├── agent2.service.ts
-│   │   │   ├── agent3.service.ts
-│   │   │   ├── agent4.service.ts
-│   │   │   ├── agent5.service.ts
-│   │   │   ├── agent6.service.ts
-│   │   │   ├── agent7.service.ts
-│   │   │   ├── agent8.service.ts
-│   │   │   ├── agent9.service.ts
-│   │   │   ├── agent10.service.ts
-│   │   │   └── agent11.service.ts
-│   │   └── googleSheets.service.ts
-│   ├── types/
-│   │   └── index.ts
-│   ├── utils/
-│   │   └── logger.ts
-│   └── index.ts
-├── .env.example
-├── .gitignore
-├── package.json
-├── tsconfig.json
-└── README.md
+## 🎯 Workflow Example
+
+1. **Create Project:**
+```python
+POST /api/v1/projects
+{
+  "name": "Summer Vibes",
+  "artist": "The Artists",
+  "song_title": "Sunset Dreams"
+}
+# Returns: { "data": { "id": "proj-123", ... } }
 ```
 
-## 🧪 Testing
+2. **Upload Audio:**
+```python
+POST /api/v1/agent3/upload
+{
+  "project_id": "proj-123",
+  "filename": "sunset-dreams.mp3"
+}
+# Agent 3 analyzes: BPM, key, structure, energy
+```
 
-```bash
-npm test
+3. **Plan Video:**
+```python
+POST /api/v1/orchestration/plan-video
+{
+  "project_id": "proj-123",
+  "generate_for_veo": true,
+  "generate_for_runway": true
+}
+# Triggers: Agent 4 → 5 → 6/7 (background)
+```
+
+4. **Get Storyboard:**
+```python
+GET /api/v1/storyboard/proj-123
+# Returns complete storyboard with all data
+```
+
+5. **QC Review (if needed):**
+```python
+POST /api/v1/qc/review
+{
+  "project_id": "proj-123",
+  "target_id": "prompt-456",
+  "target_type": "prompt",
+  "content": "The generated prompt text..."
+}
+# Agent 2 reviews and provides feedback
 ```
 
 ## 🔧 Development
 
-### Build TypeScript
+### Running Tests
 ```bash
-npm run build
+pytest
 ```
 
-### Watch Mode
+### Code Formatting
 ```bash
-npm run watch
+black app/
+isort app/
 ```
 
-### Linting
+### Type Checking
 ```bash
-npm run lint
+mypy app/
 ```
 
-### Formatting
+## 🌐 Deployment (Cloud Run)
+
+### Build Docker Image
 ```bash
-npm run format
+docker build -t music-video-production .
 ```
 
-## 📈 Example Usage
-
-### Adding a Lead (Agent 1)
+### Deploy to Cloud Run
 ```bash
-curl -X POST http://localhost:3000/api/agents/agent1/leads \
-  -H "Content-Type: application/json" \
-  -d '{
-    "firstName": "John",
-    "lastName": "Doe",
-    "email": "john@example.com",
-    "company": "Acme Corp",
-    "source": {
-      "name": "Website",
-      "type": "website"
-    }
-  }'
+gcloud run deploy music-video-production \
+  --image gcr.io/PROJECT_ID/music-video-production \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated
 ```
 
-### Qualifying a Lead (Agent 2)
-```bash
-curl -X POST http://localhost:3000/api/agents/agent2/qualify \
-  -H "Content-Type: application/json" \
-  -d '{
-    "lead": { ... },
-    "criteria": {
-      "budget": { "min": 10000, "max": 50000, "currency": "USD" },
-      "authority": true,
-      "need": true,
-      "timeline": "immediate"
-    }
-  }'
+## 📝 Data Models
+
+### Project
+- id, name, artist, song_title
+- audio_file_path
+- status (INIT, ANALYZING, PLANNING, GENERATING, QC, COMPLETE)
+- progress_percentage
+
+### Scene
+- scene_number, start_time, end_time, duration
+- music_section (Intro, Verse, Chorus, etc.)
+- description, mood, visual_style_ref
+- key_elements, camera_movement
+
+### VideoPrompt
+- scene_id, generator (veo/runway)
+- prompt_text, technical_params
+- status (PENDING_QC, APPROVED, NEEDS_REVISION)
+- iteration
+
+## 🎨 Storyboard App Integration
+
+The `/storyboard/{project_id}` endpoint returns ALL data needed for the frontend:
+
+```javascript
+{
+  "project": { /* Project details */ },
+  "audio_analysis": { /* BPM, key, structure */ },
+  "scenes": [ /* Scene breakdown */ ],
+  "style_anchors": [ /* Visual style guide */ ],
+  "prompts": {
+    "scene-id-1": [ /* Veo & Runway prompts */ ],
+    "scene-id-2": [ /* ... */ ]
+  },
+  "qc_feedback": [ /* QC reviews */ ]
+}
 ```
-
-### Syncing to Google Sheets
-```bash
-curl -X POST http://localhost:3000/api/agents/sync-sheets
-```
-
-## 🌟 Features in Detail
-
-### Intelligent Lead Scoring
-- Multi-factor scoring algorithm
-- Source-based weighting
-- Behavioral analysis
-- Demographic matching
-
-### Advanced Analytics
-- Real-time metrics
-- Custom KPI tracking
-- Conversion funnel analysis
-- Traffic source attribution
-
-### Automated Reporting
-- Scheduled report generation
-- Multiple format support (PDF, Excel, CSV)
-- Custom templates
-- Email delivery
-
-### Campaign Orchestration
-- Multi-channel coordination
-- Budget optimization
-- Performance tracking
-- ROI calculation
 
 ## 🔒 Security
 
-- Helmet.js for security headers
-- Rate limiting
-- Input validation
-- Error handling
-- Secure credential management
+- API keys stored in environment variables
+- Service account credentials for Google APIs
+- CORS configured for production
+- Request validation with Pydantic
 
-## 📝 Environment Variables
+## 🐛 Troubleshooting
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| PORT | Server port | 3000 |
-| NODE_ENV | Environment | development |
-| GOOGLE_SHEETS_CREDENTIALS_PATH | Path to Google credentials | ./credentials/google-sheets-credentials.json |
-| GOOGLE_SHEETS_SPREADSHEET_ID | Google Sheets ID | - |
-| LOG_LEVEL | Logging level | info |
-| API_RATE_LIMIT_WINDOW_MS | Rate limit window | 900000 |
-| API_RATE_LIMIT_MAX_REQUESTS | Max requests per window | 100 |
+### Google Sheets not connecting
+- Check `GOOGLE_APPLICATION_CREDENTIALS` path
+- Verify service account has Sheets API access
+- Ensure spreadsheet is shared with service account email
+
+### Gemini API errors
+- Verify `GEMINI_API_KEY` is correct
+- Check API quota in Google Cloud Console
+- System falls back to mock responses if API unavailable
+
+## 📄 License
+
+MIT License
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-MIT License - see LICENSE file for details
-
-## 🆘 Support
-
-For issues and questions:
-- Create an issue in the repository
-- Check existing documentation
-- Review API examples
-
-## 🗺️ Roadmap
-
-- [ ] Real-time dashboard
-- [ ] Webhook support
-- [ ] Advanced AI/ML integration
-- [ ] Multi-tenant support
-- [ ] Mobile app
-- [ ] Enhanced reporting templates
-- [ ] Integration with CRM systems
-- [ ] Advanced automation workflows
-
-## ✨ Acknowledgments
-
-Built with:
-- Node.js & TypeScript
-- Express.js
-- Google Sheets API
-- Winston Logger
-- And many other great open-source libraries
+2. Create feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open Pull Request
 
 ---
 
-**Made with ❤️ for marketing automation**
+**Built with:** FastAPI, Google Gemini, Google Sheets API, Pydantic
+
+**Made for:** Music video creators, directors, and production teams
