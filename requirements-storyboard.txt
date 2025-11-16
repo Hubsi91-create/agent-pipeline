@@ -1,0 +1,16 @@
+# Storyboard Backend Integration - Additional Dependencies
+# =========================================================
+# Install with: pip install -r requirements-storyboard.txt
+
+# Core Dependencies (already in main requirements.txt)
+# flask>=2.3.0
+# flask-cors>=4.0.0
+# requests>=2.31.0
+
+# NEW: Encryption & Security
+cryptography>=41.0.0          # AES-256 encryption for API keys
+
+# NEW: Optional - Enhanced Features
+# python-dotenv>=1.0.0        # Environment variable management (optional)
+# redis>=5.0.0                # Redis for production caching (optional, replaces in-memory)
+# celery>=5.3.0               # Background tasks for video generation (optional)
