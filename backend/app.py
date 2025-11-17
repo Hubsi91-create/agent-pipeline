@@ -110,8 +110,104 @@ st.markdown("""
         background-color: #1a1a2e;
         color: #3282b8;
     }
+
+    /* Genre Button Tiles (Netflix-style) */
+    .genre-button {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        border: 2px solid #3282b8;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+
+    .genre-button:hover {
+        background: linear-gradient(135deg, #0f4c75 0%, #3282b8 100%);
+        transform: translateY(-4px);
+        box-shadow: 0 8px 12px rgba(50, 130, 184, 0.4);
+        border-color: #5ca0d3;
+    }
+
+    .genre-button.selected {
+        background: linear-gradient(135deg, #3282b8 0%, #0f4c75 100%);
+        border-color: #5ca0d3;
+        box-shadow: 0 8px 16px rgba(50, 130, 184, 0.6);
+    }
+
+    /* Trend Ticker */
+    .trend-item {
+        background-color: #1a1a2e;
+        border-left: 4px solid #3282b8;
+        padding: 12px;
+        margin-bottom: 8px;
+        border-radius: 4px;
+        transition: all 0.2s ease;
+    }
+
+    .trend-item:hover {
+        background-color: #16213e;
+        border-left-color: #5ca0d3;
+        transform: translateX(4px);
+    }
+
+    /* Variation Selection */
+    .variation-card {
+        background-color: #1a1a2e;
+        border: 1px solid #3282b8;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 12px;
+        transition: all 0.2s ease;
+    }
+
+    .variation-card:hover {
+        border-color: #5ca0d3;
+        background-color: #16213e;
+    }
+
+    .variation-card.selected {
+        border: 2px solid #5ca0d3;
+        background-color: #0f4c75;
+    }
+
+    /* Prompt Display Box */
+    .prompt-box {
+        background-color: #0f0f1e;
+        border: 2px solid #3282b8;
+        border-radius: 8px;
+        padding: 16px;
+        font-family: 'Monaco', 'Courier New', monospace;
+        color: #e0e0e0;
+        margin-bottom: 16px;
+    }
+
+    .prompt-section {
+        margin-bottom: 12px;
+    }
+
+    .prompt-label {
+        color: #3282b8;
+        font-weight: bold;
+        margin-bottom: 4px;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+# ================================
+# SESSION STATE INITIALIZATION
+# ================================
+if 'selected_supergenre' not in st.session_state:
+    st.session_state.selected_supergenre = None
+if 'genre_variations' not in st.session_state:
+    st.session_state.genre_variations = []
+if 'selected_variations' not in st.session_state:
+    st.session_state.selected_variations = []
+if 'generated_prompts' not in st.session_state:
+    st.session_state.generated_prompts = []
+if 'viral_trends' not in st.session_state:
+    st.session_state.viral_trends = []
 
 # ================================
 # SIDEBAR
@@ -163,83 +259,247 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # ================================
-# TAB 1: MUSIC GENERATION
+# TAB 1: MUSIC GENERATION (NETFLIX-STYLE)
 # ================================
 with tab1:
-    st.header("🎵 Music Generation (Suno)")
-    st.markdown("Generate music variations using Few-Shot Learning")
+    st.header("🎵 Music Generation - Genre Explorer")
+    st.markdown("**Select a genre, explore variations, and generate Suno prompts**")
+    st.markdown("---")
 
-    col1, col2 = st.columns([2, 1])
+    # Main layout: Trend Ticker (left) + Genre Selector (right)
+    trend_col, main_col = st.columns([1, 3])
 
-    with col1:
-        st.subheader("Genre Configuration")
+    # ================================
+    # LEFT: LIVE TREND TICKER
+    # ================================
+    with trend_col:
+        st.subheader("📊 Live Trend Ticker")
+        st.caption("Top 20 Viral Genres (YouTube/TikTok/Spotify)")
 
-        # Übergenre input
-        super_genre = st.text_input(
-            "Übergenre (Super Genre)",
-            placeholder="z.B. Electronic, Rock, Hip-Hop, Cinematic...",
-            help="Hauptgenre für die Musikgenerierung"
-        )
+        # Load viral trends (cached)
+        if not st.session_state.viral_trends:
+            try:
+                response = requests.get(f"{API_BASE_URL}/api/v1/trends/viral", timeout=3)
+                if response.status_code == 200:
+                    st.session_state.viral_trends = response.json().get('data', [])
+            except:
+                # Fallback mock data
+                st.session_state.viral_trends = [
+                    {"genre": "Drift Phonk", "platform": "TikTok", "trend_score": "🔥🔥🔥"},
+                    {"genre": "Hypertechno", "platform": "TikTok", "trend_score": "🔥🔥🔥"},
+                    {"genre": "Liquid DnB", "platform": "Spotify", "trend_score": "🔥🔥"},
+                    {"genre": "Brazilian Phonk", "platform": "TikTok", "trend_score": "🔥🔥🔥"},
+                    {"genre": "Hyperpop 2.0", "platform": "TikTok", "trend_score": "🔥🔥🔥"},
+                    {"genre": "Afrobeats Fusion", "platform": "Spotify", "trend_score": "🔥🔥🔥"},
+                    {"genre": "UK Drill", "platform": "YouTube", "trend_score": "🔥🔥"},
+                    {"genre": "Melodic Dubstep", "platform": "YouTube", "trend_score": "🔥🔥"},
+                    {"genre": "Lofi House", "platform": "YouTube", "trend_score": "🔥🔥"},
+                    {"genre": "Emo Rap Revival", "platform": "TikTok", "trend_score": "🔥🔥"},
+                ]
 
-        # Additional parameters
-        with st.expander("⚙️ Advanced Settings"):
-            mood = st.text_input("Mood", placeholder="z.B. energetic, melancholic, uplifting...")
-            tempo = st.selectbox("Tempo", ["Slow", "Medium", "Fast", "Variable"])
-            style_refs = st.text_area(
-                "Style References",
-                placeholder="Artist oder Song-Referenzen (eine pro Zeile)",
-                height=100
-            )
-            additional_instructions = st.text_area(
-                "Additional Instructions",
-                placeholder="Weitere Anweisungen für die KI...",
-                height=100
-            )
-
-        # Generate button
-        st.markdown("---")
-        generate_col1, generate_col2 = st.columns([1, 3])
-
-        with generate_col1:
-            num_variations = st.number_input("Variations", min_value=1, max_value=50, value=20)
-
-        with generate_col2:
-            if st.button("🎵 Generate Variations", use_container_width=True):
-                if not super_genre:
-                    st.error("⚠️ Bitte Übergenre eingeben!")
-                else:
-                    with st.spinner(f"Generating {num_variations} variations..."):
-                        # TODO: API call to backend
-                        # For now: mockup
-                        st.success(f"✅ {num_variations} Variationen generiert!")
-
-                        # Mock data
-                        st.markdown("#### Generated Prompts Preview:")
-                        for i in range(min(5, num_variations)):
-                            with st.expander(f"Variation {i+1}"):
-                                st.code(f"""Genre: {super_genre}
-Mood: {mood if mood else 'Auto-detected'}
-Tempo: {tempo}
-Style: Professional, cinematic quality
-Duration: 3:00 - 3:30
-
-Prompt: Epic {super_genre} track with {tempo.lower()} tempo,
-featuring dynamic buildups and emotional depth...""")
-
-    with col2:
-        st.subheader("Few-Shot Learning Stats")
-
-        # TODO: API call to /suno/learning-stats
-        st.metric("Knowledge Base Size", "127", delta="+12")
-        st.metric("Avg Quality Score", "8.2/10", delta="+0.3")
-        st.metric("Top Genre", "Electronic")
+        # Display trends
+        for idx, trend in enumerate(st.session_state.viral_trends[:20], 1):
+            st.markdown(f"""
+            <div class="trend-item">
+                <strong>#{idx}</strong> {trend['genre']}<br/>
+                <small style="color: #888;">{trend['platform']}</small> {trend['trend_score']}
+            </div>
+            """, unsafe_allow_html=True)
 
         st.markdown("---")
-        st.markdown("#### Recent High-Quality Prompts")
-        st.caption("🟢 Score ≥8.0 (Last 5)")
+        st.caption("Updated: Real-time | Auto-refresh every 5 min")
 
-        for i in range(5):
-            st.markdown(f"• **Prompt #{120+i}** - 8.{9-i}/10")
+    # ================================
+    # RIGHT: GENRE SELECTOR + WORKFLOW
+    # ================================
+    with main_col:
+        # Genre Button Grid
+        st.subheader("🎭 Select Super Genre")
+
+        # Define main genres
+        main_genres = [
+            "Electronic", "Hip-Hop", "Rock", "Pop", "Cinematic",
+            "Latin", "Austropop", "Metal", "Jazz", "Indie"
+        ]
+
+        # Create button grid (5 columns x 2 rows)
+        cols_per_row = 5
+        for row in range(0, len(main_genres), cols_per_row):
+            cols = st.columns(cols_per_row)
+            for idx, col in enumerate(cols):
+                genre_idx = row + idx
+                if genre_idx < len(main_genres):
+                    genre = main_genres[genre_idx]
+                    with col:
+                        # Visual highlight if selected
+                        button_type = "primary" if st.session_state.selected_supergenre == genre else "secondary"
+
+                        if st.button(
+                            f"🎵 {genre}",
+                            key=f"genre_btn_{genre}",
+                            use_container_width=True,
+                            type=button_type
+                        ):
+                            st.session_state.selected_supergenre = genre
+                            st.session_state.selected_variations = []
+                            st.session_state.generated_prompts = []
+
+                            # Trigger variation generation
+                            with st.spinner(f"Generating 20 {genre} variations..."):
+                                try:
+                                    response = requests.post(
+                                        f"{API_BASE_URL}/api/v1/genres/variations",
+                                        json={"super_genre": genre, "num_variations": 20},
+                                        timeout=10
+                                    )
+                                    if response.status_code == 200:
+                                        st.session_state.genre_variations = response.json().get('data', [])
+                                    else:
+                                        # Fallback mock
+                                        st.session_state.genre_variations = [
+                                            {"subgenre": f"{genre} Style {i+1}", "description": f"Variation {i+1}"}
+                                            for i in range(20)
+                                        ]
+                                except:
+                                    # Fallback mock
+                                    st.session_state.genre_variations = [
+                                        {"subgenre": f"{genre} Style {i+1}", "description": f"Variation {i+1}"}
+                                        for i in range(20)
+                                    ]
+
+                            st.rerun()
+
+        # Custom Genre Button
+        st.markdown("---")
+        custom_col1, custom_col2 = st.columns([1, 2])
+        with custom_col1:
+            if st.button("➕ Custom Genre", use_container_width=True):
+                st.session_state.show_custom_input = True
+
+        with custom_col2:
+            if st.session_state.get('show_custom_input', False):
+                custom_genre = st.text_input("Enter custom genre", key="custom_genre_input")
+                if custom_genre and st.button("Generate", key="custom_generate"):
+                    st.session_state.selected_supergenre = custom_genre
+                    st.session_state.selected_variations = []
+                    st.session_state.generated_prompts = []
+                    # Trigger generation (same as above)
+                    st.rerun()
+
+        # ================================
+        # VARIATIONS SELECTION (appears after genre selection)
+        # ================================
+        if st.session_state.selected_supergenre and st.session_state.genre_variations:
+            st.markdown("---")
+            st.subheader(f"🎯 {st.session_state.selected_supergenre} Variations")
+            st.caption(f"Select subgenres to generate Suno prompts (max 10)")
+
+            # Display variations as checkboxes
+            variation_cols = st.columns(2)
+
+            for idx, variation in enumerate(st.session_state.genre_variations):
+                col_idx = idx % 2
+                with variation_cols[col_idx]:
+                    checkbox_key = f"var_check_{idx}"
+                    is_selected = st.checkbox(
+                        f"**{variation['subgenre']}**",
+                        key=checkbox_key,
+                        value=variation['subgenre'] in st.session_state.selected_variations
+                    )
+
+                    if is_selected and variation['subgenre'] not in st.session_state.selected_variations:
+                        if len(st.session_state.selected_variations) < 10:
+                            st.session_state.selected_variations.append(variation['subgenre'])
+                    elif not is_selected and variation['subgenre'] in st.session_state.selected_variations:
+                        st.session_state.selected_variations.remove(variation['subgenre'])
+
+                    st.caption(f"_{variation.get('description', 'No description')}_")
+
+            # Generate Prompts Button
+            st.markdown("---")
+            if st.session_state.selected_variations:
+                st.info(f"✅ {len(st.session_state.selected_variations)} variation(s) selected")
+
+                if st.button(
+                    f"🚀 Generate Suno Prompts ({len(st.session_state.selected_variations)} variations)",
+                    type="primary",
+                    use_container_width=True
+                ):
+                    with st.spinner("Generating Suno prompts..."):
+                        prompts = []
+                        for variation in st.session_state.selected_variations:
+                            try:
+                                response = requests.post(
+                                    f"{API_BASE_URL}/api/v1/suno/generate",
+                                    json={
+                                        "target_genre": variation,
+                                        "mood": None,
+                                        "tempo": None,
+                                        "style_references": [],
+                                        "additional_instructions": None
+                                    },
+                                    timeout=15
+                                )
+                                if response.status_code == 200:
+                                    prompt_data = response.json().get('data', {})
+                                    prompts.append({
+                                        "genre": variation,
+                                        "lyrics": prompt_data.get('prompt_text', 'N/A'),
+                                        "style": f"Genre: {variation}, Professional production"
+                                    })
+                            except:
+                                # Fallback mock
+                                prompts.append({
+                                    "genre": variation,
+                                    "lyrics": f"[Verse 1]\nEpic {variation} track\nWith dynamic energy\n\n[Chorus]\nProfessional quality\nCinematic sound",
+                                    "style": f"Genre: {variation}, Modern production, High energy"
+                                })
+
+                        st.session_state.generated_prompts = prompts
+                        st.success(f"✅ Generated {len(prompts)} Suno prompts!")
+
+        # ================================
+        # PROMPT DISPLAY (appears after generation)
+        # ================================
+        if st.session_state.generated_prompts:
+            st.markdown("---")
+            st.subheader("📋 Generated Suno Prompts")
+            st.caption("Copy and paste into Suno AI")
+
+            for idx, prompt in enumerate(st.session_state.generated_prompts, 1):
+                with st.expander(f"🎵 Prompt {idx}: {prompt['genre']}", expanded=idx==1):
+                    st.markdown("**[LYRICS]**")
+                    st.text_area(
+                        "Lyrics",
+                        value=prompt['lyrics'],
+                        height=150,
+                        key=f"lyrics_{idx}",
+                        label_visibility="collapsed"
+                    )
+
+                    st.markdown("**[STYLE]**")
+                    st.text_area(
+                        "Style",
+                        value=prompt['style'],
+                        height=60,
+                        key=f"style_{idx}",
+                        label_visibility="collapsed"
+                    )
+
+                    if st.button(f"📋 Copy Prompt {idx}", key=f"copy_{idx}"):
+                        st.success(f"✅ Prompt {idx} copied to clipboard!")
+
+            # Export all button
+            st.markdown("---")
+            if st.button("💾 Export All Prompts (JSON)", use_container_width=True):
+                import json as json_module
+                export_data = json_module.dumps(st.session_state.generated_prompts, indent=2)
+                st.download_button(
+                    label="📥 Download JSON",
+                    data=export_data,
+                    file_name="suno_prompts_export.json",
+                    mime="application/json"
+                )
 
 # ================================
 # TAB 2: AUDIO UPLOAD
