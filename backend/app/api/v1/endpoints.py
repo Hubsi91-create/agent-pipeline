@@ -338,3 +338,99 @@ async def get_learning_stats():
     except Exception as e:
         logger.error(f"Failed to get learning stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Trend Detection & Genre Variations ====================
+
+@router.get("/trends/viral", response_model=APIResponse)
+async def get_viral_trends():
+    """
+    Get current viral music trends from YouTube, TikTok, Spotify
+
+    Returns:
+    - List of 20 trending subgenres with platform and trend scores
+    - Shuffled on each request for variety
+    """
+    try:
+        trends = await agent1_service.get_current_viral_trends()
+
+        return APIResponse(
+            success=True,
+            message=f"Retrieved {len(trends)} viral trends",
+            data=trends
+        )
+    except Exception as e:
+        logger.error(f"Failed to get viral trends: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/genres/variations", response_model=APIResponse)
+async def generate_genre_variations(request: Dict[str, Any]):
+    """
+    Generate subgenre variations for a given super genre
+
+    Args:
+    - super_genre: Main genre (e.g., "Electronic", "Hip-Hop")
+    - num_variations: Number of variations to generate (default: 20)
+
+    Returns:
+    - List of subgenres with descriptions
+    - Uses AI to generate real, specific subgenre names
+    """
+    try:
+        super_genre = request.get("super_genre")
+        num_variations = request.get("num_variations", 20)
+
+        if not super_genre:
+            raise HTTPException(status_code=400, detail="super_genre is required")
+
+        variations = await agent1_service.generate_genre_variations(
+            super_genre,
+            num_variations
+        )
+
+        return APIResponse(
+            success=True,
+            message=f"Generated {len(variations)} {super_genre} variations",
+            data=variations
+        )
+    except Exception as e:
+        logger.error(f"Failed to generate genre variations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/trends/update", response_model=APIResponse)
+async def update_viral_trends():
+    """
+    Update viral music trends from live web search
+
+    Process:
+    1. Uses Gemini AI with current knowledge to identify viral trends
+    2. Searches for trends on TikTok, Spotify, YouTube Shorts
+    3. Includes both audio trends and music video aesthetics
+    4. Updates A1_Trend_Database sheet with 20 current trends
+    5. Returns updated trends list
+
+    This endpoint powers the "🔄 Update Trends from Web" button in the frontend.
+    """
+    try:
+        result = await agent1_service.update_viral_trends()
+
+        if result["status"] == "success":
+            return APIResponse(
+                success=True,
+                message=result["message"],
+                data={
+                    "count": result["count"],
+                    "trends": result.get("trends", [])
+                }
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("message", "Failed to update trends")
+            )
+
+    except Exception as e:
+        logger.error(f"Failed to update viral trends: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
