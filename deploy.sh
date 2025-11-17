@@ -20,9 +20,10 @@ SERVICE_NAME="${SERVICE_NAME:-music-video-production}"
 IMAGE_NAME="gcr.io/${PROJECT_ID}/${SERVICE_NAME}"
 MIN_INSTANCES="${MIN_INSTANCES:-0}"
 MAX_INSTANCES="${MAX_INSTANCES:-10}"
-MEMORY="${MEMORY:-512Mi}"
-CPU="${CPU:-1}"
+MEMORY="${MEMORY:-1Gi}"
+CPU="${CPU:-2}"
 TIMEOUT="${TIMEOUT:-300}"
+PORT="${PORT:-8080}"
 
 # Environment Variables for Cloud Run
 ENV_VARS="ENVIRONMENT=production"
@@ -198,6 +199,7 @@ deploy_to_cloud_run() {
     print_info "Memory: $MEMORY"
     print_info "CPU: $CPU"
     print_info "Timeout: ${TIMEOUT}s"
+    print_info "Port: $PORT (Streamlit frontend)"
 
     gcloud run deploy "$SERVICE_NAME" \
         --image="$IMAGE_NAME" \
@@ -209,6 +211,7 @@ deploy_to_cloud_run() {
         --memory="$MEMORY" \
         --cpu="$CPU" \
         --timeout="$TIMEOUT" \
+        --port="$PORT" \
         --set-env-vars="$ENV_VARS" \
         --project="$PROJECT_ID"
 
@@ -231,12 +234,19 @@ get_service_url() {
     echo -e "${GREEN}Service URL:${NC} $SERVICE_URL"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "API Endpoints:"
+    echo "🎬 Streamlit Frontend (Main UI):"
+    echo "  Web Interface: $SERVICE_URL"
+    echo ""
+    echo "📡 FastAPI Backend (Port 8000 internal):"
     echo "  Health Check:  $SERVICE_URL/api/v1/health"
     echo "  API Docs:      $SERVICE_URL/docs"
     echo "  OpenAPI:       $SERVICE_URL/openapi.json"
     echo ""
     echo "Test the deployment:"
+    echo "  # Open in browser:"
+    echo "  open $SERVICE_URL"
+    echo ""
+    echo "  # Test backend health:"
     echo "  curl $SERVICE_URL/api/v1/health"
     echo ""
 }
@@ -335,8 +345,8 @@ Options:
   --project PROJECT_ID        GCP Project ID (required)
   --region REGION            GCP Region (default: us-central1)
   --service-name NAME        Service name (default: music-video-production)
-  --memory MEMORY            Memory allocation (default: 512Mi)
-  --cpu CPU                  CPU allocation (default: 1)
+  --memory MEMORY            Memory allocation (default: 1Gi - dual service needs more RAM)
+  --cpu CPU                  CPU allocation (default: 2 - runs FastAPI + Streamlit)
   --min-instances NUM        Minimum instances (default: 0)
   --max-instances NUM        Maximum instances (default: 10)
   --help                     Show this help message
