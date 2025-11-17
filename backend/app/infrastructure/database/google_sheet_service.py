@@ -13,6 +13,7 @@ logger = setup_logger("GoogleSheetService")
 
 # Sheet names for each agent
 SHEET_A1_PROJECTS = "A1_Projects_DB"
+SHEET_A1_TREND_DATABASE = "A1_Trend_Database"  # Live viral music trends
 SHEET_A2_QC_FEEDBACK = "A2_QC_Feedback_DB"
 SHEET_A3_AUDIO_ANALYSIS = "A3_AudioAnalysis_DB"
 SHEET_A4_SCENES = "A4_Scenes_DB"
@@ -82,6 +83,7 @@ class GoogleSheetService:
 
         required_sheets = [
             SHEET_A1_PROJECTS,
+            SHEET_A1_TREND_DATABASE,
             SHEET_A2_QC_FEEDBACK,
             SHEET_A3_AUDIO_ANALYSIS,
             SHEET_A4_SCENES,
@@ -221,6 +223,45 @@ class GoogleSheetService:
             return True
         except Exception as e:
             logger.error(f"Failed to update record in {sheet_name}: {e}")
+            return False
+
+    async def clear_and_replace(self, sheet_name: str, headers: List[str], data_rows: List[List[Any]]) -> bool:
+        """
+        Clear a worksheet and replace with new data
+
+        Args:
+            sheet_name: Name of the worksheet
+            headers: Column headers
+            data_rows: List of data rows
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.spreadsheet:
+            logger.debug(f"Sheets not configured. Would clear and replace {sheet_name}")
+            return True  # Return success in mock mode
+
+        try:
+            worksheet = self._get_worksheet(sheet_name)
+            if not worksheet:
+                return False
+
+            # Clear all existing data
+            worksheet.clear()
+            logger.info(f"Cleared worksheet: {sheet_name}")
+
+            # Add headers
+            worksheet.append_row(headers)
+
+            # Add all data rows
+            for row in data_rows:
+                worksheet.append_row(row)
+
+            logger.info(f"Replaced {sheet_name} with {len(data_rows)} rows")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to clear and replace {sheet_name}: {e}")
             return False
 
 

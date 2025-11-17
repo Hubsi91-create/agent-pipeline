@@ -297,6 +297,23 @@ with tab1:
                     {"genre": "Emo Rap Revival", "platform": "TikTok", "trend_score": "🔥🔥"},
                 ]
 
+        # Update button
+        if st.button("🔄 Update Trends from Web", use_container_width=True, key="update_trends_btn"):
+            with st.spinner("Agent 1 searching TikTok, Spotify, and YouTube Shorts..."):
+                try:
+                    response = requests.post(f"{API_BASE_URL}/api/v1/trends/update", timeout=30)
+                    if response.status_code == 200:
+                        result = response.json()
+                        st.session_state.viral_trends = result.get('data', {}).get('trends', [])
+                        st.success(f"✅ Database updated! {result.get('data', {}).get('count', 0)} trends loaded")
+                        st.rerun()
+                    else:
+                        st.error("⚠️ Failed to update trends")
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+
+        st.markdown("---")
+
         # Display trends
         for idx, trend in enumerate(st.session_state.viral_trends[:20], 1):
             st.markdown(f"""
