@@ -849,6 +849,145 @@ with tab3:
                             st.error(f"❌ Error: {str(e)}")
 
     # ================================
+    # MIDDLE: AI STYLE GENERATOR (IMAGEN 4)
+    # ================================
+    st.markdown("---")
+    st.subheader("🎨 AI Style Generator (Imagen 4)")
+    st.markdown("**Describe your desired visual style, and AI will generate a reference image**")
+
+    # Session state for generated style
+    if 'generated_style_image' not in st.session_state:
+        st.session_state.generated_style_image = None
+    if 'generated_style_suffix' not in st.session_state:
+        st.session_state.generated_style_suffix = None
+
+    imagen_col1, imagen_col2 = st.columns([1, 1])
+
+    with imagen_col1:
+        st.markdown("**Text-to-Image Style Generation:**")
+
+        # Text input for style description
+        style_prompt = st.text_area(
+            "Describe your desired look",
+            value="",
+            placeholder="e.g., 'Cyberpunk city at night, neon lights, rain-soaked streets, cinematic film noir aesthetic'\n\nor 'Vintage 1970s Polaroid, warm tones, soft focus, nostalgic summer vibes'",
+            height=120,
+            key="imagen_style_prompt"
+        )
+
+        # Aspect ratio selector
+        aspect_ratio_options = {
+            "1:1 Square": "1:1",
+            "16:9 Widescreen": "16:9",
+            "9:16 Portrait": "9:16",
+            "4:3 Standard": "4:3"
+        }
+        aspect_ratio_display = st.selectbox(
+            "Aspect Ratio",
+            options=list(aspect_ratio_options.keys()),
+            index=0
+        )
+        aspect_ratio = aspect_ratio_options[aspect_ratio_display]
+
+        # Generate button
+        if st.button("✨ Generate with Imagen 4", type="primary", use_container_width=True):
+            if not style_prompt:
+                st.error("⚠️ Please describe the visual style you want to generate")
+            else:
+                with st.spinner("Generating style reference with Imagen 4..."):
+                    try:
+                        # Call API
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/styles/generate",
+                            json={
+                                "prompt": style_prompt,
+                                "aspect_ratio": aspect_ratio,
+                                "save_to_database": False
+                            },
+                            timeout=120
+                        )
+
+                        if response.status_code == 200:
+                            result = response.json().get('data', {})
+
+                            st.session_state.generated_style_image = result.get('image_base64')
+                            st.session_state.generated_style_suffix = result.get('style_suffix')
+
+                            if result.get('success'):
+                                st.success(f"✅ Style reference generated with {result.get('model', 'Imagen')}!")
+                            else:
+                                st.info(f"ℹ️ {result.get('note', 'Placeholder generated (Imagen not configured)')}")
+
+                        else:
+                            st.error("❌ Style generation failed")
+
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+
+    with imagen_col2:
+        st.markdown("**Generated Style:**")
+
+        # Display generated image
+        if st.session_state.generated_style_image:
+            import base64
+            from io import BytesIO
+
+            # Decode base64 image
+            image_data = base64.b64decode(st.session_state.generated_style_image)
+
+            # Display image
+            st.image(image_data, caption="AI-Generated Style Reference", use_container_width=True)
+
+            # Display extracted style suffix
+            if st.session_state.generated_style_suffix:
+                st.markdown("**🎬 Extracted Style Suffix:**")
+                st.code(st.session_state.generated_style_suffix, language=None)
+
+            st.markdown("---")
+
+            # Option to save as style
+            save_style_name = st.text_input(
+                "Save this style as:",
+                placeholder="e.g., 'My Cyberpunk Look'",
+                key="save_generated_style_name"
+            )
+
+            if st.button("💾 Use as Anchor & Save Style", type="secondary", use_container_width=True):
+                if not save_style_name:
+                    st.error("⚠️ Please enter a name for the style")
+                else:
+                    with st.spinner(f"Saving '{save_style_name}' to database..."):
+                        try:
+                            # Call API to save
+                            response = requests.post(
+                                f"{API_BASE_URL}/api/v1/styles/generate",
+                                json={
+                                    "prompt": style_prompt,
+                                    "style_name": save_style_name,
+                                    "aspect_ratio": aspect_ratio,
+                                    "save_to_database": True
+                                },
+                                timeout=120
+                            )
+
+                            if response.status_code == 200:
+                                result = response.json().get('data', {})
+                                if result.get('saved'):
+                                    st.success(f"✅ {result.get('message')}")
+                                    # Clear cache
+                                    st.session_state.available_styles = []
+                                    st.balloons()
+                                else:
+                                    st.warning(f"⚠️ {result.get('message')}")
+                            else:
+                                st.error("❌ Failed to save style")
+
+                        except Exception as e:
+                            st.error(f"❌ Error: {str(e)}")
+        else:
+            st.info("👈 Enter a description and click **Generate** to create a style reference image")
+
+    # ================================
     # BOTTOM: SCENE IMAGES GALLERY
     # ================================
     st.markdown("---")
@@ -910,236 +1049,549 @@ with tab3:
 # TAB 4: PRODUCTION
 # ================================
 with tab4:
-    st.header("🎬 Video Production Configuration")
-    st.markdown("Configure video generation settings")
+    st.header("🎬 Video Prompt Generation")
+    st.markdown("Generate platform-optimized prompts for **Google Veo** and **Runway Gen-4**")
 
-    col1, col2 = st.columns([2, 1])
+    # Session state for prompts
+    if 'generated_prompts' not in st.session_state:
+        st.session_state.generated_prompts = None
+    if 'validation_stats' not in st.session_state:
+        st.session_state.validation_stats = None
 
-    with col1:
-        st.subheader("Platform Selection")
+    # Top controls
+    control_col1, control_col2, control_col3 = st.columns([2, 2, 1])
 
-        col_a, col_b = st.columns(2)
-
-        with col_a:
-            use_veo = st.checkbox("🎥 Google Veo", value=True, help="Google Veo video generation")
-            if use_veo:
-                veo_quality = st.select_slider(
-                    "Veo Quality",
-                    options=["Draft", "Standard", "High", "Ultra"],
-                    value="High"
-                )
-
-        with col_b:
-            use_runway = st.checkbox("🚀 Runway ML", value=True, help="Runway ML video generation")
-            if use_runway:
-                runway_model = st.selectbox(
-                    "Runway Model",
-                    ["Gen-3 Alpha", "Gen-2", "Gen-1"]
-                )
-
-        st.markdown("---")
-
-        st.subheader("Generation Mode")
-
-        generation_mode = st.radio(
-            "How do you want to generate videos?",
-            [
-                "🔌 API Mode (Direct API calls)",
-                "📝 Prompt File Mode (Export prompts to file)"
-            ],
-            help="API Mode: Automatic generation. Prompt File: Manual workflow with exported prompts."
+    with control_col1:
+        # Style selector (from Tab 3)
+        style_options_tab4 = ["None"] + [style["name"] for style in st.session_state.available_styles]
+        selected_style_tab4 = st.selectbox(
+            "🎨 Apply Visual Style",
+            options=style_options_tab4,
+            help="Choose a style preset to apply to all prompts"
         )
 
-        if "API Mode" in generation_mode:
-            st.info("✅ Direct API integration - Videos will be generated automatically")
+    with control_col2:
+        validate_prompts = st.checkbox(
+            "🔍 Validate with QC Refiner (Agent 8)",
+            value=True,
+            help="Auto-correct length, forbidden keywords, and quality issues"
+        )
 
-            with st.expander("⚙️ API Configuration"):
-                st.text_input("Google Veo API Key", type="password", placeholder="Enter your Veo API key...")
-                st.text_input("Runway API Key", type="password", placeholder="Enter your Runway API key...")
+    with control_col3:
+        st.metric("Scenes", len(st.session_state.processed_scenes) if 'processed_scenes' in st.session_state else 0)
+
+    st.markdown("---")
+
+    # Generate button
+    if st.button("🎬 Generate Video Production Plan", use_container_width=True, type="primary"):
+        if 'processed_scenes' not in st.session_state or len(st.session_state.processed_scenes) == 0:
+            st.error("⚠️ No scenes found! Please process audio in Tab 2 first.")
         else:
-            st.info("📝 Prompts will be exported to file for manual processing")
+            with st.spinner("Generating prompts with Agents 6, 7, and 8..."):
+                try:
+                    # Prepare request
+                    request_data = {
+                        "scenes": st.session_state.processed_scenes,
+                        "style_name": selected_style_tab4 if selected_style_tab4 != "None" else None,
+                        "validate": validate_prompts
+                    }
 
-            export_format = st.selectbox(
-                "Export Format",
-                ["JSON", "CSV", "TXT (one per line)", "Markdown"]
-            )
+                    # Call API
+                    response = requests.post(
+                        f"{API_BASE_URL}/api/v1/prompts/generate",
+                        json=request_data,
+                        timeout=120
+                    )
+
+                    if response.status_code == 200:
+                        result = response.json()
+                        data = result.get('data', {})
+
+                        st.session_state.generated_prompts = data
+                        st.session_state.validation_stats = data.get('validation_stats')
+
+                        st.success(f"✅ {result.get('message', 'Prompts generated successfully!')}")
+
+                        if st.session_state.validation_stats:
+                            stats = st.session_state.validation_stats
+                            st.info(f"📊 Validation: {stats['valid']} valid, {stats['corrected']} corrected, {stats['errors']} errors")
+
+                        st.balloons()
+                    else:
+                        st.error(f"❌ API Error: {response.text}")
+
+                except Exception as e:
+                    st.error(f"❌ Failed to generate prompts: {str(e)}")
+
+    st.markdown("---")
+
+    # Display prompts if generated
+    if st.session_state.generated_prompts:
+        veo_prompts = st.session_state.generated_prompts.get('veo_prompts', [])
+        runway_prompts = st.session_state.generated_prompts.get('runway_prompts', [])
+        style_used = st.session_state.generated_prompts.get('style_used')
+
+        # Header with download button
+        header_col1, header_col2 = st.columns([3, 1])
+
+        with header_col1:
+            st.subheader(f"📋 Production Script ({len(veo_prompts)} scenes)")
+            if style_used:
+                st.caption(f"Style: **{style_used}**")
+
+        with header_col2:
+            # Download button
+            if st.button("💾 Download Script", use_container_width=True):
+                # Build production script
+                script_lines = []
+                script_lines.append("=" * 80)
+                script_lines.append("VIDEO PRODUCTION SCRIPT")
+                script_lines.append("=" * 80)
+                script_lines.append(f"\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                if style_used:
+                    script_lines.append(f"Style: {style_used}")
+                script_lines.append(f"\nTotal Scenes: {len(veo_prompts)}")
+                script_lines.append("\n" + "=" * 80 + "\n")
+
+                for i in range(len(veo_prompts)):
+                    veo = veo_prompts[i]
+                    runway = runway_prompts[i]
+
+                    script_lines.append(f"\n{'=' * 80}")
+                    script_lines.append(f"SCENE {i+1}")
+                    script_lines.append(f"{'=' * 80}")
+
+                    if 'processed_scenes' in st.session_state and i < len(st.session_state.processed_scenes):
+                        scene = st.session_state.processed_scenes[i]
+                        script_lines.append(f"\nTiming: {scene.get('start', 0):.2f}s - {scene.get('end', 0):.2f}s")
+                        script_lines.append(f"Duration: {scene.get('duration', 0):.2f}s")
+                        script_lines.append(f"Energy: {scene.get('energy', 'N/A')}")
+                        script_lines.append(f"Type: {scene.get('type', 'N/A')}")
+
+                    script_lines.append(f"\n--- GOOGLE VEO (Narrative) ---")
+                    script_lines.append(f"Prompt: {veo.get('prompt', '')}")
+                    if veo.get('negative'):
+                        script_lines.append(f"Negative: {veo.get('negative', '')}")
+                    if veo.get('status'):
+                        script_lines.append(f"Status: {veo.get('status', '').upper()}")
+                    if veo.get('corrections_made'):
+                        script_lines.append(f"Corrections: {', '.join(veo.get('corrections_made', []))}")
+
+                    script_lines.append(f"\n--- RUNWAY GEN-4 (Modular) ---")
+                    script_lines.append(f"Prompt: {runway.get('prompt', '')}")
+                    if runway.get('negative'):
+                        script_lines.append(f"Negative: {runway.get('negative', '')}")
+                    if runway.get('status'):
+                        script_lines.append(f"Status: {runway.get('status', '').upper()}")
+                    if runway.get('corrections_made'):
+                        script_lines.append(f"Corrections: {', '.join(runway.get('corrections_made', []))}")
+
+                    script_lines.append("")
+
+                script_text = "\n".join(script_lines)
+
+                st.download_button(
+                    label="📥 Download Production Script (.txt)",
+                    data=script_text,
+                    file_name=f"production_script_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
 
         st.markdown("---")
 
-        st.subheader("Production Settings")
+        # Display each scene's prompts
+        for i in range(len(veo_prompts)):
+            veo = veo_prompts[i]
+            runway = runway_prompts[i]
 
-        col_x, col_y = st.columns(2)
+            # Scene header
+            with st.expander(f"🎬 Scene {i+1} - {veo.get('duration', 0):.1f}s", expanded=(i < 3)):
+                # Scene metadata (if available)
+                if 'processed_scenes' in st.session_state and i < len(st.session_state.processed_scenes):
+                    scene = st.session_state.processed_scenes[i]
+                    meta_col1, meta_col2, meta_col3 = st.columns(3)
+                    with meta_col1:
+                        st.caption(f"⏱️ {scene.get('start', 0):.2f}s - {scene.get('end', 0):.2f}s")
+                    with meta_col2:
+                        st.caption(f"⚡ {scene.get('energy', 'N/A')}")
+                    with meta_col3:
+                        st.caption(f"🎭 {scene.get('type', 'N/A')}")
 
-        with col_x:
-            video_duration = st.slider("Video Duration (seconds)", 5, 60, 30)
-            fps = st.selectbox("Frame Rate", [24, 30, 60])
+                # Veo prompt
+                st.markdown("**🎥 Google Veo (Narrative)**")
+                veo_col1, veo_col2 = st.columns([5, 1])
 
-        with col_y:
-            resolution = st.selectbox("Resolution", ["1920x1080", "3840x2160", "1280x720"])
-            aspect_ratio = st.selectbox("Aspect Ratio", ["16:9", "9:16", "1:1", "4:3"])
+                with veo_col1:
+                    st.text_area(
+                        f"Veo Prompt {i+1}",
+                        value=veo.get('prompt', ''),
+                        height=100,
+                        key=f"veo_prompt_{i}",
+                        label_visibility="collapsed"
+                    )
 
-        st.markdown("---")
+                with veo_col2:
+                    if st.button("📋", key=f"copy_veo_{i}", help="Copy to clipboard"):
+                        st.code(veo.get('prompt', ''), language=None)
+                        st.success("✓")
 
-        # Start production button
-        if st.button("🎬 START PRODUCTION", use_container_width=True, type="primary"):
-            if not use_veo and not use_runway:
-                st.error("⚠️ Please select at least one platform (Veo or Runway)")
-            else:
-                with st.spinner("Initializing production pipeline..."):
-                    st.success("✅ Production started!")
+                # Show status if validated
+                if veo.get('status'):
+                    status = veo.get('status', '')
+                    if status == 'valid':
+                        st.success(f"✅ Valid ({len(veo.get('prompt', ''))} chars)")
+                    elif status == 'corrected':
+                        st.warning(f"⚠️ Corrected: {', '.join(veo.get('corrections_made', []))}")
+                    elif status == 'error':
+                        st.error(f"❌ Issues: {', '.join(veo.get('issues_found', []))}")
 
-                    # Show progress
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
+                # Mark as Gold Standard button (Feedback Loop)
+                if st.button(f"⭐ Mark as Gold Standard", key=f"gold_veo_{i}", help="Save this prompt for Few-Shot Learning"):
+                    with st.spinner("Saving to learning database..."):
+                        try:
+                            # Get scene info for description
+                            scene_desc = f"Scene {i+1}"
+                            if 'processed_scenes' in st.session_state and i < len(st.session_state.processed_scenes):
+                                scene = st.session_state.processed_scenes[i]
+                                scene_desc = f"{scene.get('type', 'Scene')} at {scene.get('start', 0):.1f}s"
 
-                    for i in range(100):
-                        progress_bar.progress(i + 1)
-                        if i < 30:
-                            status_text.text(f"Processing scenes... {i+1}%")
-                        elif i < 70:
-                            status_text.text(f"Generating prompts... {i+1}%")
-                        else:
-                            status_text.text(f"Preparing production... {i+1}%")
+                            # Call API
+                            response = requests.post(
+                                f"{API_BASE_URL}/api/v1/prompts/mark-gold-standard",
+                                json={
+                                    "model": "veo",
+                                    "prompt": veo.get('prompt', ''),
+                                    "scene_description": scene_desc,
+                                    "energy": scene.get('energy', 'medium') if 'processed_scenes' in st.session_state and i < len(st.session_state.processed_scenes) else 'medium'
+                                },
+                                timeout=30
+                            )
 
-                    st.balloons()
-                    st.success("🎬 Production pipeline ready!")
+                            if response.status_code == 200:
+                                result = response.json()
+                                st.success(f"✅ {result.get('message', 'Added to learning database!')}")
+                                st.info("🧠 Future prompt generations will learn from this example")
+                            else:
+                                st.error("❌ Failed to save")
 
-    with col2:
-        st.subheader("Production Queue")
-        st.metric("Queued Jobs", "0")
-        st.metric("Processing", "0")
-        st.metric("Completed", "0")
+                        except Exception as e:
+                            st.error(f"❌ Error: {str(e)}")
 
-        st.markdown("---")
+                st.markdown("---")
 
-        st.subheader("Estimated Costs")
-        st.markdown("**Per Scene:**")
-        if use_veo:
-            st.caption("🎥 Veo: ~$0.15")
-        if use_runway:
-            st.caption("🚀 Runway: ~$0.10")
+                # Runway prompt
+                st.markdown("**🚀 Runway Gen-4 (Modular)**")
+                runway_col1, runway_col2 = st.columns([5, 1])
 
-        st.markdown("---")
+                with runway_col1:
+                    st.text_area(
+                        f"Runway Prompt {i+1}",
+                        value=runway.get('prompt', ''),
+                        height=100,
+                        key=f"runway_prompt_{i}",
+                        label_visibility="collapsed"
+                    )
 
-        st.info("""
-        **Production Tips:**
-        - Test with 1-2 scenes first
-        - Monitor API quotas
-        - Check output quality
-        - Adjust prompts if needed
-        """)
+                with runway_col2:
+                    if st.button("📋", key=f"copy_runway_{i}", help="Copy to clipboard"):
+                        st.code(runway.get('prompt', ''), language=None)
+                        st.success("✓")
+
+                # Show status if validated
+                if runway.get('status'):
+                    status = runway.get('status', '')
+                    if status == 'valid':
+                        st.success(f"✅ Valid ({len(runway.get('prompt', ''))} chars)")
+                    elif status == 'corrected':
+                        st.warning(f"⚠️ Corrected: {', '.join(runway.get('corrections_made', []))}")
+                    elif status == 'error':
+                        st.error(f"❌ Issues: {', '.join(runway.get('issues_found', []))}")
+
+                # Mark as Gold Standard button (Feedback Loop)
+                if st.button(f"⭐ Mark as Gold Standard", key=f"gold_runway_{i}", help="Save this prompt for Few-Shot Learning"):
+                    with st.spinner("Saving to learning database..."):
+                        try:
+                            # Get scene info for description
+                            scene_desc = f"Scene {i+1}"
+                            if 'processed_scenes' in st.session_state and i < len(st.session_state.processed_scenes):
+                                scene = st.session_state.processed_scenes[i]
+                                scene_desc = f"{scene.get('type', 'Scene')} at {scene.get('start', 0):.1f}s"
+
+                            # Call API
+                            response = requests.post(
+                                f"{API_BASE_URL}/api/v1/prompts/mark-gold-standard",
+                                json={
+                                    "model": "runway",
+                                    "prompt": runway.get('prompt', ''),
+                                    "scene_description": scene_desc,
+                                    "energy": scene.get('energy', 'medium') if 'processed_scenes' in st.session_state and i < len(st.session_state.processed_scenes) else 'medium'
+                                },
+                                timeout=30
+                            )
+
+                            if response.status_code == 200:
+                                result = response.json()
+                                st.success(f"✅ {result.get('message', 'Added to learning database!')}")
+                                st.info("🧠 Future prompt generations will learn from this example")
+                            else:
+                                st.error("❌ Failed to save")
+
+                        except Exception as e:
+                            st.error(f"❌ Error: {str(e)}")
+
+    else:
+        st.info("👆 Click **Generate Video Production Plan** to create platform-optimized prompts for all scenes.")
 
 # ================================
-# TAB 5: POST-PRODUCTION
+# TAB 5: POST-PRODUCTION & DISTRIBUTION
 # ================================
 with tab5:
-    st.header("✂️ Post-Production")
-    st.markdown("CapCut integration and final editing guide")
+    st.header("✂️ Post-Production & Distribution")
+    st.markdown("CapCut editing guide + YouTube upload package")
 
-    col1, col2 = st.columns([2, 1])
+    # Session state for guides
+    if 'capcut_guide' not in st.session_state:
+        st.session_state.capcut_guide = None
+    if 'youtube_metadata' not in st.session_state:
+        st.session_state.youtube_metadata = None
+    if 'thumbnail_prompt' not in st.session_state:
+        st.session_state.thumbnail_prompt = None
 
+    col1, col2 = st.columns([1, 1])
+
+    # ================================
+    # LEFT COLUMN: CapCut Editing Guide
+    # ================================
     with col1:
-        st.subheader("CapCut Export Guide")
+        st.subheader("📹 CapCut Editing Guide")
+        st.markdown("Generate step-by-step editing instructions based on your scenes")
 
-        st.markdown("""
-        ### 📋 Workflow Steps:
+        # Generate button
+        if st.button("🎬 Generate CapCut Guide", use_container_width=True, type="primary"):
+            if 'processed_scenes' not in st.session_state or len(st.session_state.processed_scenes) == 0:
+                st.error("⚠️ No scenes found! Please process audio in Tab 2 first.")
+            else:
+                with st.spinner("Generating CapCut editing guide..."):
+                    try:
+                        # Get total audio duration if available
+                        audio_duration = None
+                        if st.session_state.processed_scenes:
+                            last_scene = st.session_state.processed_scenes[-1]
+                            audio_duration = last_scene.get('end', 0)
 
-        #### 1. Download Generated Videos
-        - Export all generated scene videos from Veo/Runway
-        - Organize in folders: `scene01/`, `scene02/`, etc.
+                        # Prepare request
+                        request_data = {
+                            "scenes": st.session_state.processed_scenes,
+                            "audio_duration": audio_duration
+                        }
 
-        #### 2. Import to CapCut
-        - Open CapCut Desktop
-        - Create New Project
-        - Import all scene videos + audio file
+                        # Call API
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/capcut/generate-guide",
+                            json=request_data,
+                            timeout=60
+                        )
 
-        #### 3. Timeline Assembly
-        ```
-        Timeline Structure:
-        ┌─────────────────────────────────┐
-        │ Audio Track (Master)            │
-        ├─────────────────────────────────┤
-        │ Scene 01 | Scene 02 | Scene 03  │
-        ├─────────────────────────────────┤
-        │ Transitions & Effects           │
-        └─────────────────────────────────┘
-        ```
+                        if response.status_code == 200:
+                            result = response.json()
+                            data = result.get('data', {})
 
-        #### 4. Sync to Music
-        - Use beat markers from audio analysis
-        - Align scene cuts to music beats
-        - Add transitions (0.5-1s crossfades)
+                            st.session_state.capcut_guide = data.get('guide')
 
-        #### 5. Color Grading
-        - Apply consistent LUT across all scenes
-        - Match brightness/contrast
-        - Adjust saturation for mood
+                            st.success(f"✅ {result.get('message', 'Guide generated!')}")
+                        else:
+                            st.error(f"❌ API Error: {response.text}")
 
-        #### 6. Final Export
-        - Resolution: 1920x1080 or 4K
-        - Format: MP4 (H.264)
-        - Bitrate: 20-50 Mbps
-        - FPS: Match source (24/30/60)
-        """)
+                    except Exception as e:
+                        st.error(f"❌ Failed to generate guide: {str(e)}")
 
         st.markdown("---")
 
-        st.subheader("Quick Export Settings")
+        # Display guide if generated
+        if st.session_state.capcut_guide:
+            st.markdown("### 📋 Your Editing Guide")
 
-        export_col1, export_col2 = st.columns(2)
+            # Display markdown guide
+            st.markdown(st.session_state.capcut_guide)
 
-        with export_col1:
-            export_res = st.selectbox("Export Resolution", ["1920x1080 (Full HD)", "3840x2160 (4K)", "1280x720 (HD)"])
-            export_fps = st.selectbox("Export FPS", [24, 30, 60])
+            # Download button
+            st.download_button(
+                label="💾 Download CapCut Guide (.md)",
+                data=st.session_state.capcut_guide,
+                file_name=f"capcut_guide_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+        else:
+            st.info("👆 Click **Generate CapCut Guide** to create your personalized editing instructions")
 
-        with export_col2:
-            export_bitrate = st.selectbox("Bitrate", ["20 Mbps", "30 Mbps", "50 Mbps"])
-            export_format = st.selectbox("Format", ["MP4 (H.264)", "MOV (ProRes)", "MP4 (H.265)"])
-
-        if st.button("📄 Generate CapCut Project Template", use_container_width=True):
-            st.success("✅ Template generated! Check downloads folder.")
-            st.code("""
-{
-  "project_name": "Music_Video_Production",
-  "timeline": {
-    "audio": "master_audio.wav",
-    "scenes": ["scene01.mp4", "scene02.mp4", "scene03.mp4"],
-    "transitions": "crossfade_0.5s"
-  },
-  "export": {
-    "resolution": "1920x1080",
-    "fps": 30,
-    "bitrate": "30 Mbps"
-  }
-}
-            """, language="json")
-
+    # ================================
+    # RIGHT COLUMN: YouTube Package
+    # ================================
     with col2:
-        st.subheader("Helpful Resources")
+        st.subheader("📺 YouTube Upload Package")
+        st.markdown("Generate viral metadata + thumbnail prompt")
 
-        st.markdown("""
-        **CapCut Tutorials:**
-        - [Basic Editing](https://capcut.com)
-        - [Beat Sync Guide](https://capcut.com)
-        - [Color Grading](https://capcut.com)
+        # Input fields
+        final_song_title = st.text_input(
+            "Final Song Title",
+            value=st.session_state.get('song_title', ''),
+            placeholder="e.g., Midnight Dreams"
+        )
 
-        **Keyboard Shortcuts:**
-        - `Space`: Play/Pause
-        - `C`: Cut clip
-        - `Delete`: Remove clip
-        - `Ctrl+Z`: Undo
-        - `Ctrl+S`: Save
-        """)
+        final_artist = st.text_input(
+            "Artist Name",
+            value=st.session_state.get('artist', ''),
+            placeholder="e.g., Phoenix"
+        )
+
+        yt_col1, yt_col2 = st.columns(2)
+
+        with yt_col1:
+            genre_input = st.text_input("Genre (optional)", placeholder="e.g., Electronic")
+
+        with yt_col2:
+            mood_input = st.text_input("Mood (optional)", placeholder="e.g., Energetic")
+
+        # Style selector
+        style_options_yt = ["None"] + [style["name"] for style in st.session_state.available_styles]
+        selected_style_yt = st.selectbox(
+            "Visual Style (optional)",
+            options=style_options_yt,
+            help="Select the visual style used in your video"
+        )
+
+        # Generate button
+        if st.button("🚀 Generate YouTube Package", use_container_width=True, type="primary"):
+            if not final_song_title or not final_artist:
+                st.error("⚠️ Please enter both song title and artist name")
+            else:
+                with st.spinner("Generating YouTube package with AI..."):
+                    try:
+                        # Prepare request for metadata
+                        metadata_request = {
+                            "song_title": final_song_title,
+                            "artist": final_artist,
+                            "genre": genre_input if genre_input else None,
+                            "mood": mood_input if mood_input else None,
+                            "style_name": selected_style_yt if selected_style_yt != "None" else None
+                        }
+
+                        # Call metadata API
+                        metadata_response = requests.post(
+                            f"{API_BASE_URL}/api/v1/youtube/generate-metadata",
+                            json=metadata_request,
+                            timeout=60
+                        )
+
+                        # Call thumbnail API
+                        thumbnail_request = {
+                            "song_title": final_song_title,
+                            "artist": final_artist,
+                            "style_name": selected_style_yt if selected_style_yt != "None" else None,
+                            "mood": mood_input if mood_input else None
+                        }
+
+                        thumbnail_response = requests.post(
+                            f"{API_BASE_URL}/api/v1/youtube/generate-thumbnail",
+                            json=thumbnail_request,
+                            timeout=60
+                        )
+
+                        if metadata_response.status_code == 200 and thumbnail_response.status_code == 200:
+                            metadata_result = metadata_response.json()
+                            thumbnail_result = thumbnail_response.json()
+
+                            st.session_state.youtube_metadata = metadata_result.get('data', {})
+                            st.session_state.thumbnail_prompt = thumbnail_result.get('data', {}).get('prompt')
+
+                            st.success("✅ YouTube package generated!")
+                            st.balloons()
+                        else:
+                            st.error(f"❌ API Error")
+
+                    except Exception as e:
+                        st.error(f"❌ Failed to generate package: {str(e)}")
 
         st.markdown("---")
 
-        st.info("""
-        **Pro Tips:**
-        - Save often (Ctrl+S)
-        - Use proxy mode for 4K
-        - Export test clip first
-        - Keep backup of project
-        """)
+        # Display YouTube package if generated
+        if st.session_state.youtube_metadata:
+            metadata = st.session_state.youtube_metadata
+
+            st.markdown("### 📦 Your YouTube Package")
+
+            # Title
+            st.markdown("**📌 Title** (click to copy)")
+            st.code(metadata.get('title', ''), language=None)
+
+            # Description
+            st.markdown("**📝 Description**")
+            st.text_area(
+                "Description",
+                value=metadata.get('description', ''),
+                height=200,
+                key="yt_description",
+                label_visibility="collapsed"
+            )
+
+            # Tags
+            st.markdown("**🏷️ Tags**")
+            tags_text = ", ".join(metadata.get('tags', []))
+            st.code(tags_text, language=None)
+
+            # Hashtags
+            if metadata.get('hashtags'):
+                st.markdown("**#️⃣ Hashtags**")
+                hashtags_text = " ".join(metadata.get('hashtags', []))
+                st.code(hashtags_text, language=None)
+
+            st.markdown("---")
+
+            # Thumbnail prompt
+            if st.session_state.thumbnail_prompt:
+                st.markdown("**🖼️ Thumbnail Prompt** (for Imagen 3 / Midjourney)")
+                st.text_area(
+                    "Thumbnail Prompt",
+                    value=st.session_state.thumbnail_prompt,
+                    height=150,
+                    key="thumbnail_prompt_display",
+                    label_visibility="collapsed"
+                )
+
+                st.caption("Use this prompt with Imagen 3, Midjourney, or DALL-E to generate your thumbnail")
+
+            # Download all as text file
+            package_text = f"""YOUTUBE UPLOAD PACKAGE
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+==================== TITLE ====================
+{metadata.get('title', '')}
+
+==================== DESCRIPTION ====================
+{metadata.get('description', '')}
+
+==================== TAGS ====================
+{tags_text}
+
+==================== HASHTAGS ====================
+{hashtags_text if metadata.get('hashtags') else 'N/A'}
+
+==================== THUMBNAIL PROMPT ====================
+{st.session_state.thumbnail_prompt if st.session_state.thumbnail_prompt else 'N/A'}
+"""
+
+            st.download_button(
+                label="💾 Download Complete Package (.txt)",
+                data=package_text,
+                file_name=f"youtube_package_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
+
+        else:
+            st.info("👆 Fill in the details and click **Generate YouTube Package**")
 
 # ================================
 # FOOTER

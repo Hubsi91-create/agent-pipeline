@@ -201,6 +201,124 @@ class Agent5StyleAnchors:
                 "message": f"Failed to analyze image: {str(e)}"
             }
 
+    async def generate_style_reference(
+        self,
+        prompt: str,
+        style_name: str = None,
+        aspect_ratio: str = "1:1",
+        save_to_database: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Generate a visual style reference image using Imagen 3.0/4
+
+        Process:
+        1. Generate image with Imagen based on text prompt
+        2. Analyze generated image with Gemini Vision to extract style suffix
+        3. Optionally save to A5_Style_Database
+
+        Args:
+            prompt: Text description of desired visual style
+                   Example: "Cyberpunk city at night, neon lights, rain-soaked streets"
+            style_name: Name for the style (required if save_to_database=True)
+            aspect_ratio: Image aspect ratio ("1:1", "16:9", "9:16", "4:3", "3:4")
+            save_to_database: Whether to save the learned style to database
+
+        Returns:
+            Dict with:
+            - success: bool
+            - image_base64: Base64-encoded generated image
+            - style_suffix: Extracted style description
+            - style_name: Style name (if saved)
+            - model: Model used for generation
+        """
+        logger.info(f"Generating style reference image: {prompt[:100]}...")
+
+        try:
+            # Step 1: Generate image with Imagen
+            image_result = await gemini_service.generate_image(
+                prompt=prompt,
+                aspect_ratio=aspect_ratio,
+                number_of_images=1
+            )
+
+            if not image_result.get("success"):
+                logger.warning("Imagen generation returned placeholder")
+
+            # Get first image
+            image_base64 = image_result["images"][0]
+
+            # Step 2: Analyze generated image to extract style
+            # Convert base64 back to bytes for analysis
+            import base64
+            image_bytes = base64.b64decode(image_base64)
+
+            # Determine mime type based on image format
+            mime_type = "image/png"  # Imagen typically generates PNG
+            if image_result.get("model") == "placeholder":
+                mime_type = "image/svg+xml"
+
+            style_suffix = await gemini_service.analyze_image_style(
+                image_bytes=image_bytes,
+                mime_type=mime_type
+            )
+
+            logger.info(f"Extracted style suffix: {style_suffix}")
+
+            result = {
+                "success": image_result.get("success", False),
+                "image_base64": image_base64,
+                "style_suffix": style_suffix,
+                "model": image_result.get("model"),
+                "aspect_ratio": aspect_ratio,
+                "original_prompt": prompt
+            }
+
+            # Step 3: Optionally save to database
+            if save_to_database:
+                if not style_name:
+                    return {
+                        **result,
+                        "status": "error",
+                        "message": "style_name is required when save_to_database=True"
+                    }
+
+                timestamp = datetime.now().isoformat()
+                data = [
+                    style_name,
+                    style_suffix,
+                    "",  # negative prompt
+                    f"AI-generated style from Imagen: {prompt[:100]}",  # description
+                    timestamp
+                ]
+
+                save_success = await google_sheet_service.append_row(SHEET_A5_STYLE_DATABASE, data)
+
+                if save_success:
+                    # Clear cache to force reload
+                    self._styles_cache = None
+                    result["style_name"] = style_name
+                    result["saved"] = True
+                    result["message"] = f"Style '{style_name}' generated and saved successfully"
+                    logger.info(f"✅ Style '{style_name}' saved to database")
+                else:
+                    result["saved"] = False
+                    result["message"] = "Image generated but failed to save to database"
+            else:
+                result["saved"] = False
+                result["message"] = "Style reference generated successfully (not saved)"
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error generating style reference: {e}")
+            return {
+                "success": False,
+                "image_base64": None,
+                "style_suffix": "",
+                "status": "error",
+                "message": f"Failed to generate style reference: {str(e)}"
+            }
+
     def clear_cache(self):
         """Clear the styles cache to force reload from database"""
         self._styles_cache = None

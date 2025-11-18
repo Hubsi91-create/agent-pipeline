@@ -29,6 +29,8 @@ SHEET_APPROVED_BEST_PRACTICES = "ApprovedBestPractices"  # Few-Shot Learning Kno
 # Video Production Reference Sheets
 SHEET_VIDEO_PROMPT_CHEATSHEET = "Video_Prompt_Cheatsheet"  # Camera & Lighting Keywords
 SHEET_A5_STYLE_DATABASE = "A5_Style_Database"  # Global Style Presets & Learned Styles
+SHEET_A6_VIDEO_EXAMPLES = "A6_Video_Examples"  # Few-Shot Examples for Video Prompt Generation
+SHEET_A9_CAPCUT_EFFECTS = "A9_CapCut_Effects"  # CapCut Effects Database for Edit Instructions
 
 
 class GoogleSheetService:
@@ -94,8 +96,10 @@ class GoogleSheetService:
             SHEET_A5_STYLES,
             SHEET_A5_STYLE_DATABASE,
             SHEET_A6_VEO_PROMPTS,
+            SHEET_A6_VIDEO_EXAMPLES,
             SHEET_A7_RUNWAY_PROMPTS,
             SHEET_A8_REFINEMENTS,
+            SHEET_A9_CAPCUT_EFFECTS,
             SHEET_SUNO_PROMPTS,
             SHEET_APPROVED_BEST_PRACTICES,
             SHEET_VIDEO_PROMPT_CHEATSHEET
