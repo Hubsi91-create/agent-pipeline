@@ -910,124 +910,235 @@ with tab3:
 # TAB 4: PRODUCTION
 # ================================
 with tab4:
-    st.header("🎬 Video Production Configuration")
-    st.markdown("Configure video generation settings")
+    st.header("🎬 Video Prompt Generation")
+    st.markdown("Generate platform-optimized prompts for **Google Veo** and **Runway Gen-4**")
 
-    col1, col2 = st.columns([2, 1])
+    # Session state for prompts
+    if 'generated_prompts' not in st.session_state:
+        st.session_state.generated_prompts = None
+    if 'validation_stats' not in st.session_state:
+        st.session_state.validation_stats = None
 
-    with col1:
-        st.subheader("Platform Selection")
+    # Top controls
+    control_col1, control_col2, control_col3 = st.columns([2, 2, 1])
 
-        col_a, col_b = st.columns(2)
-
-        with col_a:
-            use_veo = st.checkbox("🎥 Google Veo", value=True, help="Google Veo video generation")
-            if use_veo:
-                veo_quality = st.select_slider(
-                    "Veo Quality",
-                    options=["Draft", "Standard", "High", "Ultra"],
-                    value="High"
-                )
-
-        with col_b:
-            use_runway = st.checkbox("🚀 Runway ML", value=True, help="Runway ML video generation")
-            if use_runway:
-                runway_model = st.selectbox(
-                    "Runway Model",
-                    ["Gen-3 Alpha", "Gen-2", "Gen-1"]
-                )
-
-        st.markdown("---")
-
-        st.subheader("Generation Mode")
-
-        generation_mode = st.radio(
-            "How do you want to generate videos?",
-            [
-                "🔌 API Mode (Direct API calls)",
-                "📝 Prompt File Mode (Export prompts to file)"
-            ],
-            help="API Mode: Automatic generation. Prompt File: Manual workflow with exported prompts."
+    with control_col1:
+        # Style selector (from Tab 3)
+        style_options_tab4 = ["None"] + [style["name"] for style in st.session_state.available_styles]
+        selected_style_tab4 = st.selectbox(
+            "🎨 Apply Visual Style",
+            options=style_options_tab4,
+            help="Choose a style preset to apply to all prompts"
         )
 
-        if "API Mode" in generation_mode:
-            st.info("✅ Direct API integration - Videos will be generated automatically")
+    with control_col2:
+        validate_prompts = st.checkbox(
+            "🔍 Validate with QC Refiner (Agent 8)",
+            value=True,
+            help="Auto-correct length, forbidden keywords, and quality issues"
+        )
 
-            with st.expander("⚙️ API Configuration"):
-                st.text_input("Google Veo API Key", type="password", placeholder="Enter your Veo API key...")
-                st.text_input("Runway API Key", type="password", placeholder="Enter your Runway API key...")
+    with control_col3:
+        st.metric("Scenes", len(st.session_state.processed_scenes) if 'processed_scenes' in st.session_state else 0)
+
+    st.markdown("---")
+
+    # Generate button
+    if st.button("🎬 Generate Video Production Plan", use_container_width=True, type="primary"):
+        if 'processed_scenes' not in st.session_state or len(st.session_state.processed_scenes) == 0:
+            st.error("⚠️ No scenes found! Please process audio in Tab 2 first.")
         else:
-            st.info("📝 Prompts will be exported to file for manual processing")
+            with st.spinner("Generating prompts with Agents 6, 7, and 8..."):
+                try:
+                    # Prepare request
+                    request_data = {
+                        "scenes": st.session_state.processed_scenes,
+                        "style_name": selected_style_tab4 if selected_style_tab4 != "None" else None,
+                        "validate": validate_prompts
+                    }
 
-            export_format = st.selectbox(
-                "Export Format",
-                ["JSON", "CSV", "TXT (one per line)", "Markdown"]
-            )
+                    # Call API
+                    response = requests.post(
+                        f"{API_BASE_URL}/api/v1/prompts/generate",
+                        json=request_data,
+                        timeout=120
+                    )
+
+                    if response.status_code == 200:
+                        result = response.json()
+                        data = result.get('data', {})
+
+                        st.session_state.generated_prompts = data
+                        st.session_state.validation_stats = data.get('validation_stats')
+
+                        st.success(f"✅ {result.get('message', 'Prompts generated successfully!')}")
+
+                        if st.session_state.validation_stats:
+                            stats = st.session_state.validation_stats
+                            st.info(f"📊 Validation: {stats['valid']} valid, {stats['corrected']} corrected, {stats['errors']} errors")
+
+                        st.balloons()
+                    else:
+                        st.error(f"❌ API Error: {response.text}")
+
+                except Exception as e:
+                    st.error(f"❌ Failed to generate prompts: {str(e)}")
+
+    st.markdown("---")
+
+    # Display prompts if generated
+    if st.session_state.generated_prompts:
+        veo_prompts = st.session_state.generated_prompts.get('veo_prompts', [])
+        runway_prompts = st.session_state.generated_prompts.get('runway_prompts', [])
+        style_used = st.session_state.generated_prompts.get('style_used')
+
+        # Header with download button
+        header_col1, header_col2 = st.columns([3, 1])
+
+        with header_col1:
+            st.subheader(f"📋 Production Script ({len(veo_prompts)} scenes)")
+            if style_used:
+                st.caption(f"Style: **{style_used}**")
+
+        with header_col2:
+            # Download button
+            if st.button("💾 Download Script", use_container_width=True):
+                # Build production script
+                script_lines = []
+                script_lines.append("=" * 80)
+                script_lines.append("VIDEO PRODUCTION SCRIPT")
+                script_lines.append("=" * 80)
+                script_lines.append(f"\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                if style_used:
+                    script_lines.append(f"Style: {style_used}")
+                script_lines.append(f"\nTotal Scenes: {len(veo_prompts)}")
+                script_lines.append("\n" + "=" * 80 + "\n")
+
+                for i in range(len(veo_prompts)):
+                    veo = veo_prompts[i]
+                    runway = runway_prompts[i]
+
+                    script_lines.append(f"\n{'=' * 80}")
+                    script_lines.append(f"SCENE {i+1}")
+                    script_lines.append(f"{'=' * 80}")
+
+                    if 'processed_scenes' in st.session_state and i < len(st.session_state.processed_scenes):
+                        scene = st.session_state.processed_scenes[i]
+                        script_lines.append(f"\nTiming: {scene.get('start', 0):.2f}s - {scene.get('end', 0):.2f}s")
+                        script_lines.append(f"Duration: {scene.get('duration', 0):.2f}s")
+                        script_lines.append(f"Energy: {scene.get('energy', 'N/A')}")
+                        script_lines.append(f"Type: {scene.get('type', 'N/A')}")
+
+                    script_lines.append(f"\n--- GOOGLE VEO (Narrative) ---")
+                    script_lines.append(f"Prompt: {veo.get('prompt', '')}")
+                    if veo.get('negative'):
+                        script_lines.append(f"Negative: {veo.get('negative', '')}")
+                    if veo.get('status'):
+                        script_lines.append(f"Status: {veo.get('status', '').upper()}")
+                    if veo.get('corrections_made'):
+                        script_lines.append(f"Corrections: {', '.join(veo.get('corrections_made', []))}")
+
+                    script_lines.append(f"\n--- RUNWAY GEN-4 (Modular) ---")
+                    script_lines.append(f"Prompt: {runway.get('prompt', '')}")
+                    if runway.get('negative'):
+                        script_lines.append(f"Negative: {runway.get('negative', '')}")
+                    if runway.get('status'):
+                        script_lines.append(f"Status: {runway.get('status', '').upper()}")
+                    if runway.get('corrections_made'):
+                        script_lines.append(f"Corrections: {', '.join(runway.get('corrections_made', []))}")
+
+                    script_lines.append("")
+
+                script_text = "\n".join(script_lines)
+
+                st.download_button(
+                    label="📥 Download Production Script (.txt)",
+                    data=script_text,
+                    file_name=f"production_script_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
 
         st.markdown("---")
 
-        st.subheader("Production Settings")
+        # Display each scene's prompts
+        for i in range(len(veo_prompts)):
+            veo = veo_prompts[i]
+            runway = runway_prompts[i]
 
-        col_x, col_y = st.columns(2)
+            # Scene header
+            with st.expander(f"🎬 Scene {i+1} - {veo.get('duration', 0):.1f}s", expanded=(i < 3)):
+                # Scene metadata (if available)
+                if 'processed_scenes' in st.session_state and i < len(st.session_state.processed_scenes):
+                    scene = st.session_state.processed_scenes[i]
+                    meta_col1, meta_col2, meta_col3 = st.columns(3)
+                    with meta_col1:
+                        st.caption(f"⏱️ {scene.get('start', 0):.2f}s - {scene.get('end', 0):.2f}s")
+                    with meta_col2:
+                        st.caption(f"⚡ {scene.get('energy', 'N/A')}")
+                    with meta_col3:
+                        st.caption(f"🎭 {scene.get('type', 'N/A')}")
 
-        with col_x:
-            video_duration = st.slider("Video Duration (seconds)", 5, 60, 30)
-            fps = st.selectbox("Frame Rate", [24, 30, 60])
+                # Veo prompt
+                st.markdown("**🎥 Google Veo (Narrative)**")
+                veo_col1, veo_col2 = st.columns([5, 1])
 
-        with col_y:
-            resolution = st.selectbox("Resolution", ["1920x1080", "3840x2160", "1280x720"])
-            aspect_ratio = st.selectbox("Aspect Ratio", ["16:9", "9:16", "1:1", "4:3"])
+                with veo_col1:
+                    st.text_area(
+                        f"Veo Prompt {i+1}",
+                        value=veo.get('prompt', ''),
+                        height=100,
+                        key=f"veo_prompt_{i}",
+                        label_visibility="collapsed"
+                    )
 
-        st.markdown("---")
+                with veo_col2:
+                    if st.button("📋", key=f"copy_veo_{i}", help="Copy to clipboard"):
+                        st.code(veo.get('prompt', ''), language=None)
+                        st.success("✓")
 
-        # Start production button
-        if st.button("🎬 START PRODUCTION", use_container_width=True, type="primary"):
-            if not use_veo and not use_runway:
-                st.error("⚠️ Please select at least one platform (Veo or Runway)")
-            else:
-                with st.spinner("Initializing production pipeline..."):
-                    st.success("✅ Production started!")
+                # Show status if validated
+                if veo.get('status'):
+                    status = veo.get('status', '')
+                    if status == 'valid':
+                        st.success(f"✅ Valid ({len(veo.get('prompt', ''))} chars)")
+                    elif status == 'corrected':
+                        st.warning(f"⚠️ Corrected: {', '.join(veo.get('corrections_made', []))}")
+                    elif status == 'error':
+                        st.error(f"❌ Issues: {', '.join(veo.get('issues_found', []))}")
 
-                    # Show progress
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
+                st.markdown("---")
 
-                    for i in range(100):
-                        progress_bar.progress(i + 1)
-                        if i < 30:
-                            status_text.text(f"Processing scenes... {i+1}%")
-                        elif i < 70:
-                            status_text.text(f"Generating prompts... {i+1}%")
-                        else:
-                            status_text.text(f"Preparing production... {i+1}%")
+                # Runway prompt
+                st.markdown("**🚀 Runway Gen-4 (Modular)**")
+                runway_col1, runway_col2 = st.columns([5, 1])
 
-                    st.balloons()
-                    st.success("🎬 Production pipeline ready!")
+                with runway_col1:
+                    st.text_area(
+                        f"Runway Prompt {i+1}",
+                        value=runway.get('prompt', ''),
+                        height=100,
+                        key=f"runway_prompt_{i}",
+                        label_visibility="collapsed"
+                    )
 
-    with col2:
-        st.subheader("Production Queue")
-        st.metric("Queued Jobs", "0")
-        st.metric("Processing", "0")
-        st.metric("Completed", "0")
+                with runway_col2:
+                    if st.button("📋", key=f"copy_runway_{i}", help="Copy to clipboard"):
+                        st.code(runway.get('prompt', ''), language=None)
+                        st.success("✓")
 
-        st.markdown("---")
+                # Show status if validated
+                if runway.get('status'):
+                    status = runway.get('status', '')
+                    if status == 'valid':
+                        st.success(f"✅ Valid ({len(runway.get('prompt', ''))} chars)")
+                    elif status == 'corrected':
+                        st.warning(f"⚠️ Corrected: {', '.join(runway.get('corrections_made', []))}")
+                    elif status == 'error':
+                        st.error(f"❌ Issues: {', '.join(runway.get('issues_found', []))}")
 
-        st.subheader("Estimated Costs")
-        st.markdown("**Per Scene:**")
-        if use_veo:
-            st.caption("🎥 Veo: ~$0.15")
-        if use_runway:
-            st.caption("🚀 Runway: ~$0.10")
-
-        st.markdown("---")
-
-        st.info("""
-        **Production Tips:**
-        - Test with 1-2 scenes first
-        - Monitor API quotas
-        - Check output quality
-        - Adjust prompts if needed
-        """)
+    else:
+        st.info("👆 Click **Generate Video Production Plan** to create platform-optimized prompts for all scenes.")
 
 # ================================
 # TAB 5: POST-PRODUCTION

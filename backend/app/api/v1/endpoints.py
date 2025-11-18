@@ -594,3 +594,198 @@ async def learn_style_from_image(
     except Exception as e:
         logger.error(f"Style learning failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Phase C2: Video Prompt Generation ====================
+
+@router.post("/prompts/generate", response_model=APIResponse)
+async def generate_video_prompts(request: Dict[str, Any]):
+    """
+    Generate platform-optimized video prompts for all scenes
+
+    Process:
+    1. Load scenes (from request or project)
+    2. Load selected style preset (optional)
+    3. Agent 6 generates narrative prompts for Veo
+    4. Agent 7 generates modular prompts for Runway
+    5. Agent 8 validates and auto-corrects all prompts
+    6. Returns complete prompt set ready for production
+
+    Args:
+        scenes: List of scene dicts
+        style_name: Optional style preset name (from A5_Style_Database)
+        validate: Whether to run QC validation (default: True)
+
+    Returns:
+        Dict with veo_prompts, runway_prompts, and validation_stats
+    """
+    try:
+        from app.agents.agent_6_veo_prompter.service import agent6_service
+        from app.agents.agent_7_runway_prompter.service import agent7_service
+        from app.agents.agent_8_refiner.service import agent8_service
+        from app.agents.agent_5_style_anchors.service import agent5_service
+
+        scenes = request.get("scenes", [])
+        style_name = request.get("style_name")
+        validate = request.get("validate", True)
+
+        if not scenes:
+            raise HTTPException(status_code=400, detail="scenes list is required")
+
+        logger.info(f"Generating prompts for {len(scenes)} scenes (style: {style_name or 'default'})")
+
+        # Load style if specified
+        style = None
+        if style_name:
+            all_styles = await agent5_service.get_available_styles()
+            style = next((s for s in all_styles if s["name"] == style_name), None)
+            if not style:
+                logger.warning(f"Style '{style_name}' not found, using default")
+
+        veo_prompts = []
+        runway_prompts = []
+
+        # Generate prompts for each scene
+        for scene in scenes:
+            # Generate Veo prompt
+            veo_prompt = await agent6_service.generate_prompt(scene, style)
+            veo_prompts.append(veo_prompt)
+
+            # Generate Runway prompt
+            runway_prompt = await agent7_service.generate_prompt(scene, style)
+            runway_prompts.append(runway_prompt)
+
+        # Validate with Agent 8 if requested
+        validation_stats = None
+        if validate:
+            logger.info("Running QC validation on all prompts")
+
+            # Validate all prompts
+            all_prompts = veo_prompts + runway_prompts
+            validation_result = await agent8_service.validate_batch(all_prompts, style)
+
+            # Update prompts with validated versions
+            validated_prompts = validation_result["results"]
+
+            # Split back into veo and runway
+            veo_count = len(veo_prompts)
+            veo_prompts = validated_prompts[:veo_count]
+            runway_prompts = validated_prompts[veo_count:]
+
+            validation_stats = {
+                "total": validation_result["total"],
+                "valid": validation_result["valid"],
+                "corrected": validation_result["corrected"],
+                "errors": validation_result["errors"]
+            }
+
+            logger.info(f"Validation complete: {validation_stats['valid']} valid, {validation_stats['corrected']} corrected, {validation_stats['errors']} errors")
+
+        return APIResponse(
+            success=True,
+            message=f"Generated {len(veo_prompts)} Veo prompts and {len(runway_prompts)} Runway prompts",
+            data={
+                "veo_prompts": veo_prompts,
+                "runway_prompts": runway_prompts,
+                "validation_stats": validation_stats,
+                "style_used": style["name"] if style else None
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Prompt generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/prompts/validate", response_model=APIResponse)
+async def validate_prompt(request: Dict[str, Any]):
+    """
+    Validate and auto-correct a single video prompt
+
+    Process:
+    1. Check prompt length against model limits (Veo: 500, Runway: 300)
+    2. Scan for negative/forbidden keywords from style
+    3. Auto-correct issues (remove forbidden words, trim length)
+    4. Return validated prompt with status and corrections list
+
+    Args:
+        prompt_dict: Dict with 'prompt', 'model', 'scene_id'
+        style_name: Optional style preset name for negative keyword checking
+
+    Returns:
+        Validated prompt with status ("valid", "corrected", "error")
+    """
+    try:
+        from app.agents.agent_8_refiner.service import agent8_service
+        from app.agents.agent_5_style_anchors.service import agent5_service
+
+        prompt_dict = request.get("prompt_dict")
+        style_name = request.get("style_name")
+
+        if not prompt_dict:
+            raise HTTPException(status_code=400, detail="prompt_dict is required")
+
+        logger.info(f"Validating {prompt_dict.get('model', 'unknown')} prompt")
+
+        # Load style if specified
+        style = None
+        if style_name:
+            all_styles = await agent5_service.get_available_styles()
+            style = next((s for s in all_styles if s["name"] == style_name), None)
+
+        # Validate
+        validated = await agent8_service.validate_prompt(prompt_dict, style)
+
+        return APIResponse(
+            success=True,
+            message=f"Validation complete: {validated['status']}",
+            data=validated
+        )
+
+    except Exception as e:
+        logger.error(f"Prompt validation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/prompts/batch-validate", response_model=APIResponse)
+async def batch_validate_prompts(request: Dict[str, Any]):
+    """
+    Validate multiple prompts at once
+
+    Args:
+        prompts: List of prompt dicts
+        style_name: Optional style preset name
+
+    Returns:
+        Validation statistics and all validated prompts
+    """
+    try:
+        from app.agents.agent_8_refiner.service import agent8_service
+        from app.agents.agent_5_style_anchors.service import agent5_service
+
+        prompts = request.get("prompts", [])
+        style_name = request.get("style_name")
+
+        if not prompts:
+            raise HTTPException(status_code=400, detail="prompts list is required")
+
+        logger.info(f"Batch validating {len(prompts)} prompts")
+
+        # Load style if specified
+        style = None
+        if style_name:
+            all_styles = await agent5_service.get_available_styles()
+            style = next((s for s in all_styles if s["name"] == style_name), None)
+
+        # Validate batch
+        result = await agent8_service.validate_batch(prompts, style)
+
+        return APIResponse(
+            success=True,
+            message=f"Validated {result['total']} prompts: {result['valid']} valid, {result['corrected']} corrected",
+            data=result
+        )
+
+    except Exception as e:
+        logger.error(f"Batch validation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
