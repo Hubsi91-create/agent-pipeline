@@ -1202,3 +1202,273 @@ async def generate_documentary_script(request: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Documentary script generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Phase F Extensions: Documentary Production (Agents 14-17) ====================
+
+@router.post("/documentary/prepare-voiceover", response_model=APIResponse)
+async def prepare_voiceover(request: Dict[str, Any]):
+    """
+    Prepare voiceover script for documentary narration (Agent 14)
+
+    Hybrid Mode:
+    - Manual: Download clean script for ElevenLabs web interface
+    - API: Automatic generation with ElevenLabs API (future)
+
+    Process:
+    1. Extracts narration text from documentary script
+    2. Calculates duration estimate (150 WPM average)
+    3. Returns clean text file or audio URL
+
+    Args:
+        script: Complete script from Agent 13
+        mode: "manual" (download text) or "api" (ElevenLabs)
+        voice_id: ElevenLabs voice ID (for API mode)
+
+    Returns:
+        - script_text: Clean narration text (for manual download)
+        - audio_url: Audio file URL (for API mode)
+        - duration_estimate: Estimated minutes
+        - word_count: Total word count
+    """
+    try:
+        from app.agents.agent_14_narrator.service import narrator_service
+
+        script = request.get("script")
+        mode = request.get("mode", "manual")
+        voice_id = request.get("voice_id")
+
+        if not script:
+            raise HTTPException(status_code=400, detail="script is required")
+
+        logger.info(f"Preparing voiceover in {mode} mode")
+
+        # Prepare voiceover
+        result = await narrator_service.prepare_voiceover_script(
+            script=script,
+            mode=mode,
+            voice_id=voice_id
+        )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "Voiceover preparation failed")
+            )
+
+        return APIResponse(
+            success=True,
+            message=f"Voiceover prepared ({mode} mode): {result.get('word_count', 0)} words, ~{result.get('duration_estimate', 0)} min",
+            data=result
+        )
+
+    except Exception as e:
+        logger.error(f"Voiceover preparation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/documentary/fact-check", response_model=APIResponse)
+async def fact_check_script(request: Dict[str, Any]):
+    """
+    Verify factual claims in documentary script using AI (Agent 15)
+
+    Process:
+    1. Extracts factual claims from script
+    2. Verifies each claim with Gemini + Google Search Grounding
+    3. Generates detailed fact-check report (Markdown)
+    4. Highlights critical issues and warnings
+
+    Args:
+        script: Documentary script from Agent 13
+        check_mode: "critical" (numbers/dates/names) or "full" (all claims)
+
+    Returns:
+        - fact_report: Markdown report with issues and verified claims
+        - issues_found: Number of critical issues
+        - checks_performed: Total checks
+        - critical_issues: List of false/misleading claims
+        - warnings: List of uncertain claims
+    """
+    try:
+        from app.agents.agent_15_fact_checker.service import fact_checker_service
+
+        script = request.get("script")
+        check_mode = request.get("check_mode", "critical")
+
+        if not script:
+            raise HTTPException(status_code=400, detail="script is required")
+
+        logger.info(f"Fact-checking script in {check_mode} mode")
+
+        # Run fact check
+        result = await fact_checker_service.verify_facts(
+            script=script,
+            check_mode=check_mode
+        )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "Fact-checking failed")
+            )
+
+        issues_count = result.get("issues_found", 0)
+        warning_message = f"⚠️ {issues_count} critical issues found!" if issues_count > 0 else "✅ All facts verified!"
+
+        return APIResponse(
+            success=True,
+            message=f"Fact-check complete: {result.get('checks_performed', 0)} claims checked. {warning_message}",
+            data=result
+        )
+
+    except Exception as e:
+        logger.error(f"Fact-checking failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/documentary/find-stock-footage", response_model=APIResponse)
+async def find_stock_footage(request: Dict[str, Any]):
+    """
+    Find free stock footage for B-roll using Pexels API (Agent 16)
+
+    Process:
+    1. Takes B-roll keywords from script or manual list
+    2. Searches Pexels for free, high-quality stock videos
+    3. Returns video URLs with download links
+    4. Supports both videos and photos
+
+    Args:
+        keywords: List of search keywords OR
+        script: Documentary script (will auto-extract B-roll keywords)
+        media_type: "videos" or "photos" (default: "videos")
+        results_per_keyword: Number of results per keyword (default: 3)
+
+    Returns:
+        - results: List of stock footage with:
+          - title: Video title
+          - thumbnail: Preview image URL
+          - download_url: Direct download link
+          - duration: Video duration (for videos)
+          - photographer: Creator name
+          - source: "Pexels"
+    """
+    try:
+        from app.agents.agent_16_stock_scout.service import stock_scout_service
+
+        keywords = request.get("keywords")
+        script = request.get("script")
+        media_type = request.get("media_type", "videos")
+        results_per_keyword = request.get("results_per_keyword", 3)
+
+        # Either keywords or script is required
+        if not keywords and not script:
+            raise HTTPException(
+                status_code=400,
+                detail="Either keywords list or script is required"
+            )
+
+        # Extract keywords from script if provided
+        if script and not keywords:
+            logger.info("Extracting B-roll keywords from script")
+            keywords = await stock_scout_service.extract_broll_keywords(script)
+
+        logger.info(f"Finding stock footage for {len(keywords)} keywords")
+
+        # Search for stock footage
+        result = await stock_scout_service.find_stock_footage(
+            keywords=keywords,
+            media_type=media_type,
+            results_per_keyword=results_per_keyword
+        )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "Stock footage search failed")
+            )
+
+        return APIResponse(
+            success=True,
+            message=f"Found {result.get('total_found', 0)} {media_type} across {len(keywords)} keywords",
+            data=result
+        )
+
+    except Exception as e:
+        logger.error(f"Stock footage search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/documentary/generate-xml", response_model=APIResponse)
+async def generate_timeline_xml(request: Dict[str, Any]):
+    """
+    Generate FCPXML timeline for DaVinci Resolve / Premiere Pro (Agent 17)
+
+    Process:
+    1. Takes all production assets (voiceover, music, videos, images)
+    2. Generates FCPXML (Final Cut Pro XML) format
+    3. Creates multi-track timeline:
+       - Track 1: Voiceover narration
+       - Track 2: Background music (30% volume)
+       - Track 3: B-roll videos
+       - Track 4: Still images
+    4. Adds chapter markers from script
+
+    Args:
+        assets: {
+            "voiceover": {"file_path": str, "duration": float},
+            "music": {"file_path": str, "duration": float},
+            "videos": [{"file_path": str, "duration": float, "start_time": float}],
+            "images": [{"file_path": str, "duration": float, "start_time": float}]
+        }
+        script: Optional script for chapter markers
+        frame_rate: "24", "25", "30", or "60" (default: "24")
+        format: "fcpxml" or "edl" (default: "fcpxml")
+
+    Returns:
+        - xml_content: Complete FCPXML content
+        - timeline_duration: Total duration in seconds
+        - tracks: Number of tracks
+    """
+    try:
+        from app.agents.agent_17_xml_architect.service import xml_architect_service
+
+        assets = request.get("assets")
+        script = request.get("script")
+        frame_rate = request.get("frame_rate", "24")
+        xml_format = request.get("format", "fcpxml")
+
+        if not assets:
+            raise HTTPException(status_code=400, detail="assets are required")
+
+        logger.info(f"Generating {xml_format.upper()} timeline at {frame_rate} fps")
+
+        # Generate XML
+        if xml_format == "fcpxml":
+            result = await xml_architect_service.generate_fcpxml(
+                assets=assets,
+                script=script,
+                frame_rate=frame_rate
+            )
+        elif xml_format == "edl":
+            result = await xml_architect_service.generate_edl(assets=assets)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="format must be 'fcpxml' or 'edl'"
+            )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("error", "XML generation failed")
+            )
+
+        return APIResponse(
+            success=True,
+            message=f"{xml_format.upper()} generated: {result.get('timeline_duration', 0):.1f}s, {result.get('tracks', 0)} tracks",
+            data=result
+        )
+
+    except Exception as e:
+        logger.error(f"XML generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
