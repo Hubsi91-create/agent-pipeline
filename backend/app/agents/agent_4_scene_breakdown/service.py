@@ -10,7 +10,7 @@ from app.infrastructure.database.google_sheet_service import (
     SHEET_A4_SCENES,
     SHEET_VIDEO_PROMPT_CHEATSHEET
 )
-from app.infrastructure.ai.gemini_service import gemini_service
+from app.infrastructure.external_services.gemini_service import gemini_service
 from app.utils.logger import setup_logger
 import random
 
