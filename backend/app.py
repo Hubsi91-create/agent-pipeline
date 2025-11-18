@@ -7,11 +7,17 @@ import streamlit as st
 import requests
 from typing import List, Optional
 import json
+import os
 
 # ================================
 # CONFIGURATION
 # ================================
-API_BASE_URL = "http://localhost:8000"
+# Dynamic URL detection for Cloud Run compatibility
+# Cloud Run (container-internal): 127.0.0.1:8000
+# Local development: localhost:8000
+API_HOST = os.getenv("API_HOST", "127.0.0.1")
+API_PORT = os.getenv("API_PORT", "8000")
+API_BASE_URL = f"http://{API_HOST}:{API_PORT}"
 
 # ================================
 # PAGE CONFIGURATION
