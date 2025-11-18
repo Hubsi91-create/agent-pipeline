@@ -367,26 +367,44 @@ with tab1:
                             st.session_state.generated_prompts = []
 
                             # Trigger variation generation
-                            with st.spinner(f"Generating 20 {genre} variations with AI..."):
+                            with st.spinner(f"Generating 20 {genre} variations with AI (this may take up to 60s)..."):
                                 try:
                                     response = requests.post(
                                         f"{API_BASE_URL}/api/v1/genres/variations",
                                         json={"super_genre": genre, "num_variations": 20},
-                                        timeout=30  # Increased for complex AI generation
+                                        timeout=60  # Increased for complex Gemini AI generation
                                     )
                                     if response.status_code == 200:
                                         st.session_state.genre_variations = response.json().get('data', [])
                                     else:
-                                        # Show error message to user
-                                        st.error(f"⚠️ API Error ({response.status_code}): {response.text[:200]}")
+                                        # Show detailed API error
+                                        st.error(f"❌ API Error ({response.status_code}): {response.text[:300]}")
                                         # Fallback mock
                                         st.session_state.genre_variations = [
                                             {"subgenre": f"{genre} Style {i+1}", "description": f"Variation {i+1}"}
                                             for i in range(20)
                                         ]
+                                except requests.exceptions.Timeout:
+                                    # Specific timeout handling
+                                    st.error(f"⏳ Timeout: Agent 1 brauchte länger als 60 Sekunden. Gemini AI ist überlastet oder das Netzwerk ist langsam. Bitte erneut versuchen.")
+                                    # Fallback mock
+                                    st.session_state.genre_variations = [
+                                        {"subgenre": f"{genre} Style {i+1}", "description": f"Variation {i+1}"}
+                                        for i in range(20)
+                                    ]
+                                except requests.exceptions.ConnectionError as e:
+                                    # Connection error (backend offline)
+                                    st.error(f"❌ Connection Error: Backend nicht erreichbar. Ist der FastAPI-Server online?")
+                                    st.caption(f"Details: {str(e)[:200]}")
+                                    # Fallback mock
+                                    st.session_state.genre_variations = [
+                                        {"subgenre": f"{genre} Style {i+1}", "description": f"Variation {i+1}"}
+                                        for i in range(20)
+                                    ]
                                 except Exception as e:
-                                    # Show exception details to user
-                                    st.error(f"❌ Request failed: {str(e)}")
+                                    # Generic exception handling
+                                    st.error(f"❌ Unexpected Error: {type(e).__name__}")
+                                    st.caption(f"Details: {str(e)[:300]}")
                                     # Fallback mock
                                     st.session_state.genre_variations = [
                                         {"subgenre": f"{genre} Style {i+1}", "description": f"Variation {i+1}"}
@@ -409,7 +427,44 @@ with tab1:
                     st.session_state.selected_supergenre = custom_genre
                     st.session_state.selected_variations = []
                     st.session_state.generated_prompts = []
-                    # Trigger generation (same as above)
+
+                    # Trigger variation generation (same logic as genre buttons)
+                    with st.spinner(f"Generating 20 {custom_genre} variations with AI (this may take up to 60s)..."):
+                        try:
+                            response = requests.post(
+                                f"{API_BASE_URL}/api/v1/genres/variations",
+                                json={"super_genre": custom_genre, "num_variations": 20},
+                                timeout=60  # Increased for complex Gemini AI generation
+                            )
+                            if response.status_code == 200:
+                                st.session_state.genre_variations = response.json().get('data', [])
+                            else:
+                                st.error(f"❌ API Error ({response.status_code}): {response.text[:300]}")
+                                st.session_state.genre_variations = [
+                                    {"subgenre": f"{custom_genre} Style {i+1}", "description": f"Variation {i+1}"}
+                                    for i in range(20)
+                                ]
+                        except requests.exceptions.Timeout:
+                            st.error(f"⏳ Timeout: Agent 1 brauchte länger als 60 Sekunden. Bitte erneut versuchen.")
+                            st.session_state.genre_variations = [
+                                {"subgenre": f"{custom_genre} Style {i+1}", "description": f"Variation {i+1}"}
+                                for i in range(20)
+                            ]
+                        except requests.exceptions.ConnectionError as e:
+                            st.error(f"❌ Connection Error: Backend nicht erreichbar.")
+                            st.caption(f"Details: {str(e)[:200]}")
+                            st.session_state.genre_variations = [
+                                {"subgenre": f"{custom_genre} Style {i+1}", "description": f"Variation {i+1}"}
+                                for i in range(20)
+                            ]
+                        except Exception as e:
+                            st.error(f"❌ Unexpected Error: {type(e).__name__}")
+                            st.caption(f"Details: {str(e)[:300]}")
+                            st.session_state.genre_variations = [
+                                {"subgenre": f"{custom_genre} Style {i+1}", "description": f"Variation {i+1}"}
+                                for i in range(20)
+                            ]
+
                     st.rerun()
 
         # ================================
