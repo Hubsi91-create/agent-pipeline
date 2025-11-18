@@ -26,6 +26,9 @@ SHEET_A8_REFINEMENTS = "A8_Refinements_DB"
 SHEET_SUNO_PROMPTS = "Suno_Prompts_DB"
 SHEET_APPROVED_BEST_PRACTICES = "ApprovedBestPractices"  # Few-Shot Learning Knowledge Base
 
+# Video Production Reference Sheets
+SHEET_VIDEO_PROMPT_CHEATSHEET = "Video_Prompt_Cheatsheet"  # Camera & Lighting Keywords
+
 
 class GoogleSheetService:
     """Singleton service for Google Sheets operations"""
@@ -92,7 +95,8 @@ class GoogleSheetService:
             SHEET_A7_RUNWAY_PROMPTS,
             SHEET_A8_REFINEMENTS,
             SHEET_SUNO_PROMPTS,
-            SHEET_APPROVED_BEST_PRACTICES
+            SHEET_APPROVED_BEST_PRACTICES,
+            SHEET_VIDEO_PROMPT_CHEATSHEET
         ]
 
         existing_sheets = [ws.title for ws in self.spreadsheet.worksheets()]
