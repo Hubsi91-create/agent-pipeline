@@ -116,6 +116,10 @@ class SceneBreakdownRequest(BaseModel):
     audio_analysis_id: str
 
 
+# Backward compatibility alias - SceneBreakdown is the same as Scene
+SceneBreakdown = Scene
+
+
 # ==================== Agent 5: Style Anchors ====================
 
 class StyleAnchor(BaseModel):
