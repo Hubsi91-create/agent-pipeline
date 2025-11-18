@@ -33,15 +33,18 @@ class GeminiService:
         if not api_key:
             logger.warning("GEMINI_API_KEY not found. AI features will be limited.")
             self.model = None
+            self.vision_model = None
             return
 
         try:
             genai.configure(api_key=api_key)
             self.model = genai.GenerativeModel('gemini-pro')
-            logger.info("Gemini API initialized successfully")
+            self.vision_model = genai.GenerativeModel('gemini-1.5-pro')  # Vision support
+            logger.info("Gemini API initialized successfully (text + vision)")
         except Exception as e:
             logger.error(f"Failed to initialize Gemini API: {e}")
             self.model = None
+            self.vision_model = None
 
     async def generate_text(
         self,
@@ -80,6 +83,65 @@ class GeminiService:
         except Exception as e:
             logger.error(f"Gemini generation failed: {e}")
             return self._mock_response(prompt)
+
+    async def analyze_image_style(
+        self,
+        image_bytes: bytes,
+        mime_type: str = "image/jpeg"
+    ) -> str:
+        """
+        Analyze visual style of an image using Gemini Vision
+
+        Args:
+            image_bytes: Image file bytes
+            mime_type: MIME type (image/jpeg, image/png, etc.)
+
+        Returns:
+            Style analysis as prompt suffix
+        """
+        if not self.vision_model:
+            logger.warning("Gemini vision model not initialized. Returning mock style analysis.")
+            return "Cinematic look with natural lighting, warm color grading, shallow depth of field, shot on vintage film stock"
+
+        try:
+            # Create image part for Gemini
+            image_part = {
+                "mime_type": mime_type,
+                "data": image_bytes
+            }
+
+            system_prompt = """You are a professional Colorist and Director of Photography.
+
+Analyze the visual style of this image and extract technical attributes that define its aesthetic.
+
+Focus on:
+1. **Lighting**: Type, direction, quality (hard/soft), color temperature
+2. **Color Grading**: Dominant colors, contrast, saturation, color palette
+3. **Film Stock/Camera Aesthetic**: Digital vs. film look, grain, texture
+4. **Depth of Field**: Shallow/deep focus, bokeh characteristics
+5. **Composition**: Framing style, visual weight
+
+Your output should be a COMPACT PROMPT SUFFIX (30-50 words) that could be used with a video generator like Veo or Runway.
+
+Format: "shot on [camera/filmstock], [lighting description], [color grading], [mood/aesthetic]"
+
+Example: "shot on CineStill 800T film, soft neon lighting with high contrast, teal and orange color grading, cinematic bokeh, moody urban aesthetic"
+
+Generate ONLY the prompt suffix, no additional explanation."""
+
+            response = self.vision_model.generate_content([
+                system_prompt,
+                image_part
+            ])
+
+            style_suffix = response.text.strip()
+            logger.info(f"Gemini Vision analyzed style: {style_suffix[:100]}...")
+
+            return style_suffix
+
+        except Exception as e:
+            logger.error(f"Gemini Vision analysis failed: {e}")
+            return "Cinematic look with natural lighting, warm color grading, shallow depth of field, shot on vintage film stock"
 
     def _mock_response(self, prompt: str) -> str:
         """Generate a mock response when Gemini is unavailable"""

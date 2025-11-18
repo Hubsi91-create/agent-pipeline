@@ -253,7 +253,7 @@ st.markdown("---")
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🎵 Music Generation",
     "📤 Audio Upload",
-    "🎨 Visual Assets",
+    "🎨 Visuals & Style",
     "🎬 Production",
     "✂️ Post-Production"
 ])
@@ -690,29 +690,186 @@ with tab2:
                 )
 
 # ================================
-# TAB 3: VISUAL ASSETS
+# TAB 3: VISUALS & STYLE
 # ================================
+# Session state for styles
+if 'available_styles' not in st.session_state:
+    st.session_state.available_styles = []
+if 'selected_style' not in st.session_state:
+    st.session_state.selected_style = None
+if 'learned_style_name' not in st.session_state:
+    st.session_state.learned_style_name = ""
+
 with tab3:
-    st.header("🎨 Visual Assets Upload")
-    st.markdown("Upload scene images for video production mapping")
+    st.header("🎨 Visuals & Style Management")
+    st.markdown("**Choose a global look or teach the AI a new style from your reference images**")
+    st.markdown("---")
 
-    col1, col2 = st.columns([2, 1])
+    # Top section: Style Selector (left) + Style Learning (right)
+    style_col1, style_col2 = st.columns([1, 1])
 
-    with col1:
-        st.subheader("Scene Images")
+    # ================================
+    # LEFT: STYLE PRESETS
+    # ================================
+    with style_col1:
+        st.subheader("📚 Choose Global Look")
 
+        # Load available styles
+        if not st.session_state.available_styles:
+            try:
+                response = requests.get(f"{API_BASE_URL}/api/v1/styles", timeout=5)
+                if response.status_code == 200:
+                    st.session_state.available_styles = response.json().get('data', [])
+            except:
+                # Fallback
+                st.session_state.available_styles = [
+                    {"name": "CineStill 800T", "description": "Tungsten-balanced film with neon glow"},
+                    {"name": "Blade Runner 2049", "description": "Neo-noir sci-fi aesthetic"}
+                ]
+
+        # Dropdown for style selection
+        style_options = ["None"] + [style["name"] for style in st.session_state.available_styles]
+        selected_style_name = st.selectbox(
+            "Select a visual style preset",
+            options=style_options,
+            key="style_selector"
+        )
+
+        if selected_style_name != "None":
+            # Find selected style details
+            selected_style_data = next(
+                (s for s in st.session_state.available_styles if s["name"] == selected_style_name),
+                None
+            )
+
+            if selected_style_data:
+                st.session_state.selected_style = selected_style_data
+
+                # Display style details
+                st.markdown("---")
+                st.markdown("**📋 Style Details:**")
+                st.info(f"**{selected_style_data['name']}**\n\n{selected_style_data.get('description', 'No description')}")
+
+                if selected_style_data.get('suffix'):
+                    st.markdown("**🎬 Prompt Suffix:**")
+                    st.code(selected_style_data['suffix'], language=None)
+
+                if selected_style_data.get('negative'):
+                    st.markdown("**🚫 Negative Prompt:**")
+                    st.caption(selected_style_data['negative'])
+
+    # ================================
+    # RIGHT: STYLE LEARNING
+    # ================================
+    with style_col2:
+        st.subheader("🧠 Learn New Style")
+
+        with st.expander("📖 How Style Learning Works", expanded=False):
+            st.markdown("""
+            **AI-Powered Style Cloning:**
+            1. Upload a reference image with your desired aesthetic
+            2. Gemini Vision analyzes lighting, color grading, and composition
+            3. AI generates a compact "prompt suffix" describing the style
+            4. Style is saved permanently to your database
+
+            **What gets analyzed:**
+            - Lighting (hard/soft, direction, color temperature)
+            - Color grading (tones, contrast, saturation)
+            - Film stock aesthetic (grain, texture)
+            - Depth of field and bokeh
+            - Overall mood and composition
+            """)
+
+        st.markdown("---")
+
+        # File uploader for style learning
+        style_image = st.file_uploader(
+            "Upload reference image for style analysis",
+            type=["jpg", "jpeg", "png"],
+            key="style_learning_uploader",
+            help="Upload an image that represents the visual style you want to clone"
+        )
+
+        if style_image:
+            st.image(style_image, caption="Reference Image", use_container_width=True)
+
+            # Input for style name
+            new_style_name = st.text_input(
+                "Name for this style",
+                value=st.session_state.learned_style_name,
+                placeholder="e.g., 'Vintage Polaroid', 'Cyberpunk Neon', 'Film Noir'",
+                key="style_name_input"
+            )
+
+            st.markdown("---")
+
+            # Analyze & Save button
+            if st.button("🔬 Analyze & Save Style", type="primary", use_container_width=True):
+                if not new_style_name:
+                    st.error("⚠️ Please enter a name for the style")
+                else:
+                    with st.spinner(f"Agent 5 analyzing '{new_style_name}' with Gemini Vision..."):
+                        try:
+                            # Read image bytes
+                            image_bytes = style_image.read()
+                            style_image.seek(0)  # Reset for preview
+
+                            # Determine MIME type
+                            mime_type = "image/jpeg"
+                            if style_image.name.endswith(".png"):
+                                mime_type = "image/png"
+
+                            # Call API
+                            response = requests.post(
+                                f"{API_BASE_URL}/api/v1/styles/learn",
+                                files={"file": image_bytes},
+                                params={
+                                    "style_name": new_style_name,
+                                    "mime_type": mime_type
+                                },
+                                timeout=60
+                            )
+
+                            if response.status_code == 200:
+                                result = response.json().get('data', {})
+                                st.success(f"✅ {result.get('message', 'Style learned successfully!')}")
+
+                                # Display learned style
+                                if result.get('suffix'):
+                                    st.markdown("**🎬 Generated Prompt Suffix:**")
+                                    st.code(result['suffix'], language=None)
+
+                                # Clear cache
+                                st.session_state.available_styles = []
+                                st.balloons()
+                            else:
+                                st.error("⚠️ Style learning failed")
+
+                        except Exception as e:
+                            st.error(f"❌ Error: {str(e)}")
+
+    # ================================
+    # BOTTOM: SCENE IMAGES GALLERY
+    # ================================
+    st.markdown("---")
+    st.subheader("📁 Scene Images Gallery")
+    st.caption("Upload reference images for specific scenes (optional)")
+
+    scene_col1, scene_col2 = st.columns([2, 1])
+
+    with scene_col1:
         visual_files = st.file_uploader(
             "Upload scene images",
             type=["png", "jpg", "jpeg", "webp"],
             accept_multiple_files=True,
-            help="Upload images for each scene. Naming: scene01.png, scene02.png, etc."
+            help="Upload images for each scene. Naming: scene01.png, scene02.png, etc.",
+            key="scene_images_uploader"
         )
 
         if visual_files:
             st.success(f"✅ {len(visual_files)} image(s) uploaded")
 
-            st.markdown("#### Uploaded Scenes:")
-            st.markdown("**WICHTIG:** Prüfe die Dateinamen für korrektes Mapping!")
+            st.markdown("#### Gallery View:")
 
             # Display in grid
             cols_per_row = 3
@@ -726,52 +883,28 @@ with tab3:
                             st.image(file, caption=f"📁 {file.name}", use_container_width=True)
                             st.caption(f"Size: {file.size / 1024:.1f} KB")
 
-            st.markdown("---")
-
-            # Scene mapping table
-            st.markdown("#### Scene Mapping Table")
-            mapping_data = []
-            for idx, file in enumerate(visual_files, 1):
-                mapping_data.append({
-                    "Scene #": idx,
-                    "Filename": file.name,
-                    "Status": "✅ Ready",
-                    "Size": f"{file.size / 1024:.1f} KB"
-                })
-
-            st.dataframe(mapping_data, use_container_width=True)
-
-    with col2:
-        st.subheader("Scene Guidelines")
-
-        st.markdown("""
-        **Naming Convention:**
-        - `scene01.png`
-        - `scene02.png`
-        - `scene03.png`
-        - etc.
-
-        **Recommended:**
-        - Format: PNG, JPG
-        - Resolution: 1920x1080 or higher
-        - Aspect Ratio: 16:9
-        - Max size: 10 MB per file
-        """)
+    with scene_col2:
+        st.markdown("**Scene Guidelines:**")
+        st.caption("• Format: PNG, JPG, WEBP")
+        st.caption("• Resolution: 1920x1080+")
+        st.caption("• Aspect Ratio: 16:9")
+        st.caption("• Max: 10 MB per file")
 
         st.markdown("---")
-        st.subheader("Quick Actions")
+        st.markdown("**Naming Convention:**")
+        st.code("scene01.png\nscene02.png\nscene03.png", language=None)
 
-        if st.button("🔍 Validate All", use_container_width=True):
-            if visual_files:
-                st.success("All files validated ✅")
-            else:
-                st.warning("No files to validate")
-
-        if st.button("📊 Generate Report", use_container_width=True):
-            if visual_files:
-                st.info(f"Report: {len(visual_files)} scenes ready for production")
-            else:
-                st.warning("Upload files first")
+        if visual_files:
+            st.markdown("---")
+            if st.button("📊 View Mapping Table", use_container_width=True):
+                mapping_data = []
+                for idx, file in enumerate(visual_files, 1):
+                    mapping_data.append({
+                        "Scene #": idx,
+                        "Filename": file.name,
+                        "Size": f"{file.size / 1024:.1f} KB"
+                    })
+                st.dataframe(mapping_data, use_container_width=True, hide_index=True)
 
 # ================================
 # TAB 4: PRODUCTION

@@ -28,6 +28,7 @@ SHEET_APPROVED_BEST_PRACTICES = "ApprovedBestPractices"  # Few-Shot Learning Kno
 
 # Video Production Reference Sheets
 SHEET_VIDEO_PROMPT_CHEATSHEET = "Video_Prompt_Cheatsheet"  # Camera & Lighting Keywords
+SHEET_A5_STYLE_DATABASE = "A5_Style_Database"  # Global Style Presets & Learned Styles
 
 
 class GoogleSheetService:
@@ -91,6 +92,7 @@ class GoogleSheetService:
             SHEET_A3_AUDIO_ANALYSIS,
             SHEET_A4_SCENES,
             SHEET_A5_STYLES,
+            SHEET_A5_STYLE_DATABASE,
             SHEET_A6_VEO_PROMPTS,
             SHEET_A7_RUNWAY_PROMPTS,
             SHEET_A8_REFINEMENTS,

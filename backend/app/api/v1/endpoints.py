@@ -517,3 +517,80 @@ async def process_scenes(scenes: list[Dict[str, Any]], project_id: str = None, u
     except Exception as e:
         logger.error(f"Scene processing failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Phase C1: Style Anchors & Visual Learning ====================
+
+@router.get("/styles", response_model=APIResponse)
+async def get_available_styles():
+    """
+    Get all available style presets from A5_Style_Database
+
+    Returns:
+        List of style dictionaries with:
+        - name: Style name (e.g., "CineStill 800T")
+        - suffix: Prompt suffix for video generation
+        - negative: Negative prompt (optional)
+        - description: Human-readable description
+    """
+    try:
+        from app.agents.agent_5_style_anchors.service import agent5_service
+
+        styles = await agent5_service.get_available_styles()
+
+        return APIResponse(
+            success=True,
+            message=f"Retrieved {len(styles)} style presets",
+            data=styles
+        )
+    except Exception as e:
+        logger.error(f"Failed to get styles: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/styles/learn", response_model=APIResponse)
+async def learn_style_from_image(
+    file: bytes,
+    style_name: str,
+    mime_type: str = "image/jpeg"
+):
+    """
+    Learn a new visual style from an uploaded image using Gemini Vision
+
+    Process:
+    1. Send image to Gemini 1.5 Pro (Vision)
+    2. AI analyzes lighting, color grading, film stock, composition
+    3. Generates a compact "prompt suffix" (30-50 words)
+    4. Saves to A5_Style_Database as a new preset
+
+    Args:
+        file: Image file bytes
+        style_name: Name for the new style (e.g., "My Custom Look")
+        mime_type: MIME type (image/jpeg, image/png, etc.)
+
+    Returns:
+        Style analysis result with generated suffix
+    """
+    try:
+        from app.agents.agent_5_style_anchors.service import agent5_service
+
+        logger.info(f"Learning style from image: {style_name}")
+
+        result = await agent5_service.learn_style_from_image(
+            image_bytes=file,
+            style_name=style_name,
+            mime_type=mime_type
+        )
+
+        if result["status"] == "success":
+            return APIResponse(
+                success=True,
+                message=result["message"],
+                data=result
+            )
+        else:
+            raise HTTPException(status_code=500, detail=result["message"])
+
+    except Exception as e:
+        logger.error(f"Style learning failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
