@@ -11,7 +11,7 @@ from app.infrastructure.database.google_sheet_service import (
     SHEET_A1_PROJECTS,
     SHEET_A1_TREND_DATABASE
 )
-from app.infrastructure.ai.gemini_service import gemini_service
+from app.infrastructure.external_services.gemini_service import gemini_service
 from app.utils.logger import setup_logger
 import random
 import json
