@@ -519,59 +519,175 @@ with tab1:
                 )
 
 # ================================
-# TAB 2: AUDIO UPLOAD
+# TAB 2: AUDIO ANALYSIS & SCENE PLANNING
 # ================================
+# Session state for audio analysis
+if 'audio_scenes' not in st.session_state:
+    st.session_state.audio_scenes = []
+if 'audio_filename' not in st.session_state:
+    st.session_state.audio_filename = None
+if 'audio_bpm' not in st.session_state:
+    st.session_state.audio_bpm = None
+
 with tab2:
-    st.header("📤 Audio Upload")
-    st.markdown("Upload your generated music files (.wav or .mp3)")
+    st.header("📤 Audio Analysis & Scene Planning")
+    st.markdown("**Upload audio, analyze energy, and create cut-ready scene plan**")
+    st.markdown("---")
 
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        st.subheader("Upload Audio Files")
+        st.subheader("Step 1: Upload Audio")
 
-        uploaded_files = st.file_uploader(
-            "Choose audio file(s)",
+        uploaded_file = st.file_uploader(
+            "Choose audio file",
             type=["wav", "mp3"],
-            accept_multiple_files=True,
+            accept_multiple_files=False,
             help="Unterstützte Formate: WAV, MP3"
         )
 
-        if uploaded_files:
-            st.success(f"✅ {len(uploaded_files)} file(s) uploaded")
+        if uploaded_file:
+            st.success(f"✅ {uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
 
-            st.markdown("#### Uploaded Files:")
-            for idx, file in enumerate(uploaded_files, 1):
-                with st.expander(f"{idx}. {file.name} ({file.size / 1024:.1f} KB)"):
-                    st.audio(file)
+            # Audio player
+            st.audio(uploaded_file)
 
-                    col_a, col_b = st.columns([1, 1])
-                    with col_a:
-                        if st.button(f"🔍 Analyze", key=f"analyze_{idx}"):
-                            with st.spinner("Analyzing audio..."):
-                                # TODO: API call to audio analyzer
-                                st.info("Analysis: 128 BPM, E minor, 3:24 duration")
+            # Analyze & Plan button
+            st.markdown("---")
+            if st.button("🎬 Analyze & Plan Scenes", type="primary", use_container_width=True):
+                with st.spinner("Agent 3 analyzing audio energy... Agent 4 planning scenes..."):
+                    try:
+                        # Step 1: Analyze audio with Agent 3
+                        audio_bytes = uploaded_file.read()
+                        uploaded_file.seek(0)  # Reset for audio player
 
-                    with col_b:
-                        if st.button(f"🚀 Process", key=f"process_{idx}"):
-                            st.success("Added to processing queue!")
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/audio/analyze",
+                            files={"file": audio_bytes},
+                            params={"filename": uploaded_file.name},
+                            timeout=30
+                        )
+
+                        if response.status_code == 200:
+                            analysis_data = response.json().get('data', {})
+                            scenes = analysis_data.get('scenes', [])
+                            st.session_state.audio_filename = analysis_data.get('filename')
+                            st.session_state.audio_bpm = analysis_data.get('bpm')
+
+                            # Step 2: Process scenes with Agent 4
+                            response2 = requests.post(
+                                f"{API_BASE_URL}/api/v1/scenes/process",
+                                json={
+                                    "scenes": scenes,
+                                    "use_ai": True
+                                },
+                                timeout=60
+                            )
+
+                            if response2.status_code == 200:
+                                enhanced_scenes = response2.json().get('data', {}).get('scenes', [])
+                                st.session_state.audio_scenes = enhanced_scenes
+
+                                st.success(f"✅ Analysis complete! {len(enhanced_scenes)} scenes created")
+                                st.balloons()
+                            else:
+                                st.error("⚠️ Scene processing failed")
+                        else:
+                            st.error("⚠️ Audio analysis failed")
+
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
 
     with col2:
-        st.subheader("Processing Queue")
-        st.info("No files in queue")
+        st.subheader("Quick Info")
+
+        if st.session_state.audio_filename:
+            st.info(f"**File:** {st.session_state.audio_filename}")
+
+        if st.session_state.audio_bpm:
+            st.metric("BPM", st.session_state.audio_bpm)
+
+        if st.session_state.audio_scenes:
+            st.metric("Scenes", len(st.session_state.audio_scenes))
 
         st.markdown("---")
-        st.subheader("Audio Analysis Settings")
+        st.markdown("**Technical Limits:**")
+        st.caption("🎥 Veo/Runway: Max 8s per scene")
+        st.caption("🔄 Auto-split: Long sections")
+        st.caption("⚡ Energy: Low/Medium/High")
 
-        enable_bpm = st.checkbox("Detect BPM", value=True)
-        enable_key = st.checkbox("Detect Key", value=True)
-        enable_segments = st.checkbox("Scene Detection", value=True)
+    # Interactive Scene Table
+    if st.session_state.audio_scenes:
+        st.markdown("---")
+        st.subheader("Step 2: Edit Scene Plan")
+        st.caption("Edit timings, camera, lighting, or descriptions directly in the table")
 
-        if st.button("⚙️ Analyze All", use_container_width=True):
-            if uploaded_files:
-                st.success("Batch analysis started!")
-            else:
-                st.warning("No files to analyze")
+        # Prepare data for st.data_editor
+        scene_data = []
+        for scene in st.session_state.audio_scenes:
+            scene_data.append({
+                "Scene #": scene.get("id", 0),
+                "Start (s)": scene.get("start", 0.0),
+                "End (s)": scene.get("end", 0.0),
+                "Duration (s)": scene.get("duration", 0.0),
+                "Type": scene.get("type", ""),
+                "Energy": scene.get("energy", ""),
+                "Camera": scene.get("camera", ""),
+                "Lighting": scene.get("lighting", ""),
+                "Description": scene.get("description", "")
+            })
+
+        # Interactive editable table
+        edited_data = st.data_editor(
+            scene_data,
+            use_container_width=True,
+            num_rows="dynamic",  # Allow adding/deleting rows
+            column_config={
+                "Scene #": st.column_config.NumberColumn("Scene #", disabled=True),
+                "Start (s)": st.column_config.NumberColumn("Start (s)", format="%.2f"),
+                "End (s)": st.column_config.NumberColumn("End (s)", format="%.2f"),
+                "Duration (s)": st.column_config.NumberColumn("Duration (s)", format="%.2f", disabled=True),
+                "Type": st.column_config.TextColumn("Type"),
+                "Energy": st.column_config.SelectboxColumn("Energy", options=["Low", "Medium", "High"]),
+                "Camera": st.column_config.TextColumn("Camera"),
+                "Lighting": st.column_config.TextColumn("Lighting"),
+                "Description": st.column_config.TextColumn("Description", width="large")
+            },
+            hide_index=True,
+            key="scene_editor"
+        )
+
+        # Save button
+        st.markdown("---")
+        col_save1, col_save2, col_save3 = st.columns([1, 1, 1])
+
+        with col_save1:
+            if st.button("💾 Save Scene Plan", use_container_width=True):
+                st.session_state.audio_scenes = edited_data
+                st.success("✅ Scene plan saved!")
+
+        with col_save2:
+            if st.button("📥 Export as JSON", use_container_width=True):
+                import json as json_module
+                export_data = json_module.dumps(edited_data, indent=2)
+                st.download_button(
+                    label="Download JSON",
+                    data=export_data,
+                    file_name="scene_plan.json",
+                    mime="application/json"
+                )
+
+        with col_save3:
+            if st.button("📄 Export as CSV", use_container_width=True):
+                import pandas as pd
+                df = pd.DataFrame(edited_data)
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="Download CSV",
+                    data=csv,
+                    file_name="scene_plan.csv",
+                    mime="text/csv"
+                )
 
 # ================================
 # TAB 3: VISUAL ASSETS
