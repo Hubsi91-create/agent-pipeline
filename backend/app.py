@@ -7,17 +7,13 @@ import streamlit as st
 import requests
 from typing import List, Optional
 import json
-import os
 
 # ================================
 # CONFIGURATION
 # ================================
-# Dynamic URL detection for Cloud Run compatibility
-# Cloud Run (container-internal): 127.0.0.1:8000
-# Local development: localhost:8000
-API_HOST = os.getenv("API_HOST", "127.0.0.1")
-API_PORT = os.getenv("API_PORT", "8000")
-API_BASE_URL = f"http://{API_HOST}:{API_PORT}"
+# Hardcoded internal loopback address for Cloud Run (same container)
+# FastAPI and Streamlit run in the same container, communicate via 127.0.0.1
+API_BASE_URL = "http://127.0.0.1:8000/api/v1"
 
 # ================================
 # PAGE CONFIGURATION

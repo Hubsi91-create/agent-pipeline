@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Music Video Agent System - Dual Service Startup Script
-# Starts both FastAPI (backend) and Streamlit (frontend)
+# Music Video Agent System - Robust Dual Service Startup Script
+# Prevents race conditions with active health checking
 
 set -e
 
@@ -19,17 +19,39 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info &
 UVICORN_PID=$!
 echo "✅ FastAPI started (PID: $UVICORN_PID)"
 
-# Wait a moment for FastAPI to initialize
-sleep 3
+# ================================
+# 2. WAIT FOR BACKEND TO BE READY (Health Check)
+# ================================
+echo "⏳ Waiting for Backend to be ready..."
+BACKEND_READY=false
+
+for i in {1..30}; do
+    if curl -s http://127.0.0.1:8000/docs > /dev/null 2>&1; then
+        echo "✅ Backend is UP and responding!"
+        BACKEND_READY=true
+        break
+    fi
+    echo "Waiting for backend... ($i/30)"
+    sleep 1
+done
+
+if [ "$BACKEND_READY" = false ]; then
+    echo "❌ ERROR: Backend failed to start within 30 seconds"
+    kill $UVICORN_PID 2>/dev/null || true
+    exit 1
+fi
 
 # ================================
-# 2. START STREAMLIT FRONTEND (Port 8080) - IN FOREGROUND
+# 3. START STREAMLIT FRONTEND (Cloud Run Port) - IN FOREGROUND
 # ================================
-echo "🎬 Starting Streamlit frontend on port 8080..."
+# Use Cloud Run's $PORT variable or fallback to 8080
+FRONTEND_PORT=${PORT:-8080}
+
+echo "🎬 Starting Streamlit frontend on port $FRONTEND_PORT..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Streamlit configuration
-export STREAMLIT_SERVER_PORT=8080
+# Streamlit configuration for Cloud Run
+export STREAMLIT_SERVER_PORT=$FRONTEND_PORT
 export STREAMLIT_SERVER_ADDRESS=0.0.0.0
 export STREAMLIT_SERVER_HEADLESS=true
 export STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
@@ -38,7 +60,7 @@ export STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false
 
 # Start Streamlit in foreground (keeps container alive)
 streamlit run app.py \
-    --server.port=8080 \
+    --server.port=$FRONTEND_PORT \
     --server.address=0.0.0.0 \
     --server.headless=true \
     --browser.gatherUsageStats=false \
