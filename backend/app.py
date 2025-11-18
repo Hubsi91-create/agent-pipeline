@@ -302,9 +302,10 @@ with tab1:
 
         # Update button
         if st.button("🔄 Update Trends from Web", use_container_width=True, key="update_trends_btn"):
-            with st.spinner("Agent 1 searching TikTok, Spotify, and YouTube Shorts..."):
+            with st.spinner("Agent 1 searching TikTok, Spotify, and YouTube Shorts with Google Search..."):
                 try:
-                    response = requests.post(f"{API_BASE_URL}/api/v1/trends/update", timeout=30)
+                    # Increased timeout for Google Search Grounding (can take 30-60 seconds)
+                    response = requests.post(f"{API_BASE_URL}/api/v1/trends/update", timeout=60)
                     if response.status_code == 200:
                         result = response.json()
                         st.session_state.viral_trends = result.get('data', {}).get('trends', [])
