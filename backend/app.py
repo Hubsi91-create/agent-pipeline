@@ -13,7 +13,8 @@ import json
 # ================================
 # Hardcoded internal loopback address for Cloud Run (same container)
 # FastAPI and Streamlit run in the same container, communicate via 127.0.0.1
-API_BASE_URL = "http://127.0.0.1:8000/api/v1"
+# NOTE: No /api/v1 suffix here - the frontend adds it to each endpoint
+API_BASE_URL = "http://127.0.0.1:8000"
 
 # ================================
 # PAGE CONFIGURATION
@@ -223,7 +224,7 @@ with st.sidebar:
 
     # Check backend health
     try:
-        response = requests.get(f"{API_BASE_URL}/health", timeout=2)
+        response = requests.get(f"{API_BASE_URL}/api/v1/health", timeout=2)
         if response.status_code == 200:
             st.success("✅ Backend Online")
             st.json(response.json())
