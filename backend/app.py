@@ -250,12 +250,13 @@ st.markdown("**AI-Powered Music Video Generation System**")
 st.markdown("---")
 
 # Create tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🎵 Music Generation",
     "📤 Audio Upload",
     "🎨 Visuals & Style",
     "🎬 Production",
-    "✂️ Post-Production"
+    "✂️ Post-Production",
+    "📽️ Doku-Studio"
 ])
 
 # ================================
@@ -1592,6 +1593,315 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
         else:
             st.info("👆 Fill in the details and click **Generate YouTube Package**")
+
+# ================================
+# TAB 6: DOKU-STUDIO
+# ================================
+with tab6:
+    st.header("📽️ Doku-Studio - Netflix-Style Documentary Generator")
+    st.markdown("**Clone any documentary's style and create 15-minute scripts on any topic**")
+    st.markdown("---")
+
+    # Session state for documentary
+    if 'doc_style_template' not in st.session_state:
+        st.session_state.doc_style_template = None
+    if 'doc_script' not in st.session_state:
+        st.session_state.doc_script = None
+
+    col1, col2 = st.columns([1, 1])
+
+    # ================================
+    # LEFT: STYLE CLONING (Agent 12)
+    # ================================
+    with col1:
+        st.subheader("🔍 Style Analyzer (Reverse Engineering)")
+        st.markdown("**Analyze a reference documentary to extract its style template**")
+
+        with st.expander("📖 How Style Cloning Works", expanded=False):
+            st.markdown("""
+            **The Reverse Engineering Process:**
+            1. Paste a YouTube URL of your reference documentary (e.g., Vox, BBC, Vice)
+            2. Agent 12 extracts the transcript automatically
+            3. AI analyzes pacing, narrative style, and tone
+            4. Generates a comprehensive "Style Template"
+            5. Use this template to clone the style for your own topic
+
+            **What gets analyzed:**
+            - Pacing (words per minute, cut frequency)
+            - Narrative style (informative, dramatic, conversational)
+            - Mood and tone
+            - Visual style and color palette
+            - B-Roll frequency and suggestions
+            - Key storytelling patterns
+            """)
+
+        st.markdown("---")
+
+        # YouTube URL input
+        youtube_url = st.text_input(
+            "YouTube URL of Reference Documentary",
+            placeholder="https://www.youtube.com/watch?v=...",
+            help="Paste the URL of a documentary you want to clone the style from"
+        )
+
+        # Analyze button
+        if st.button("🔬 Analyze Style", type="primary", use_container_width=True):
+            if not youtube_url:
+                st.error("⚠️ Please enter a YouTube URL")
+            else:
+                with st.spinner("Agent 12 analyzing documentary style..."):
+                    try:
+                        # Call API
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/documentary/analyze-style",
+                            json={"video_url": youtube_url},
+                            timeout=120
+                        )
+
+                        if response.status_code == 200:
+                            result = response.json()
+                            data = result.get('data', {})
+
+                            st.session_state.doc_style_template = data
+
+                            st.success(f"✅ {result.get('message', 'Style extracted!')}")
+                            st.balloons()
+                        else:
+                            st.error(f"❌ API Error: {response.text}")
+
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+
+        st.markdown("---")
+
+        # Display style template if analyzed
+        if st.session_state.doc_style_template:
+            st.markdown("### 📋 Extracted Style Template")
+
+            template = st.session_state.doc_style_template
+
+            # Template name
+            st.info(f"**{template.get('template_name', 'Custom Style')}**")
+
+            # Pacing
+            st.markdown("**⏱️ Pacing:**")
+            pacing = template.get('pacing', {})
+            st.caption(f"• {pacing.get('words_per_minute', 'N/A')} WPM")
+            st.caption(f"• {pacing.get('estimated_duration_minutes', 'N/A')} minutes estimated")
+            st.caption(f"• {pacing.get('cut_frequency', 'N/A')}")
+
+            # Tone
+            st.markdown("**🎭 Tone:**")
+            tone = template.get('tone', {})
+            st.caption(f"• Style: {tone.get('narrative_style', 'N/A')}")
+            st.caption(f"• Mood: {tone.get('mood', 'N/A')}")
+            st.caption(f"• Voice: {tone.get('narrator_voice', 'N/A')}")
+
+            # Visual style
+            st.markdown("**🎨 Visual Style:**")
+            visual = template.get('visual_style', {})
+            st.caption(f"• Colors: {visual.get('color_palette', 'N/A')}")
+            st.caption(f"• B-Roll: {visual.get('b_roll_frequency', 'N/A')}")
+
+            # Keywords
+            if template.get('keywords'):
+                st.markdown("**🔑 Keywords:**")
+                st.caption(", ".join(template.get('keywords', [])[:10]))
+
+            # Download as JSON
+            import json
+            template_json = json.dumps(template, indent=2)
+            st.download_button(
+                label="💾 Download Style Template (JSON)",
+                data=template_json,
+                file_name=f"style_template_{template.get('template_name', 'custom').replace(' ', '_')}.json",
+                mime="application/json",
+                use_container_width=True
+            )
+
+        else:
+            st.info("👆 Enter a YouTube URL and click **Analyze Style** to extract the documentary's template")
+
+    # ================================
+    # RIGHT: STORY DEVELOPMENT (Agent 13)
+    # ================================
+    with col2:
+        st.subheader("✍️ Story Architect (3-Act Structure)")
+        st.markdown("**Generate a complete 15-minute documentary script**")
+
+        with st.expander("📖 How Script Generation Works", expanded=False):
+            st.markdown("""
+            **The 3-Act Structure:**
+            - **Act 1: The Hook** (0-2 min) - Grab attention, establish stakes
+            - **Act 2: The Conflict/Journey** (2-10 min) - Dive deep, build tension
+            - **Act 3: The Resolution** (10-15 min) - Provide answers, conclude
+
+            **What you get:**
+            - Complete narrator script (~2250 words)
+            - Chapter breakdown with timings
+            - B-Roll suggestions for each chapter
+            - Actionable production instructions
+
+            **Optional:** Apply the style template from Agent 12 to clone the style!
+            """)
+
+        st.markdown("---")
+
+        # Topic input
+        doc_topic = st.text_area(
+            "Documentary Topic",
+            placeholder="e.g., 'The Rise of Artificial Intelligence' or 'The Future of Climate Change'",
+            height=80,
+            help="Enter the main topic of your documentary"
+        )
+
+        # Duration
+        doc_duration = st.slider(
+            "Duration (minutes)",
+            min_value=5,
+            max_value=30,
+            value=15,
+            help="Total documentary duration"
+        )
+
+        # Use style template checkbox
+        use_template = st.checkbox(
+            "🎨 Apply Style Template (from left)",
+            value=bool(st.session_state.doc_style_template),
+            disabled=not st.session_state.doc_style_template,
+            help="Clone the style from the analyzed documentary"
+        )
+
+        # Generate button
+        if st.button("🎬 Generate 15-Minute Script", type="primary", use_container_width=True):
+            if not doc_topic:
+                st.error("⚠️ Please enter a documentary topic")
+            else:
+                with st.spinner("Agent 13 creating 3-act structure with Gemini Pro..."):
+                    try:
+                        # Prepare request
+                        request_data = {
+                            "topic": doc_topic,
+                            "duration_minutes": doc_duration,
+                            "style_template": st.session_state.doc_style_template if use_template else None
+                        }
+
+                        # Call API
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/documentary/generate-script",
+                            json=request_data,
+                            timeout=180
+                        )
+
+                        if response.status_code == 200:
+                            result = response.json()
+                            data = result.get('data', {})
+
+                            st.session_state.doc_script = data
+
+                            st.success(f"✅ {result.get('message', 'Script generated!')}")
+                            st.balloons()
+                        else:
+                            st.error(f"❌ API Error: {response.text}")
+
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+
+        st.markdown("---")
+
+        # Display script if generated
+        if st.session_state.doc_script:
+            st.markdown("### 📜 Generated Documentary Script")
+
+            script = st.session_state.doc_script
+
+            # Title and logline
+            st.info(f"**{script.get('title', 'Untitled')}**\n\n{script.get('logline', '')}")
+
+            # Stats
+            stats_col1, stats_col2 = st.columns(2)
+            with stats_col1:
+                st.metric("Duration", f"{script.get('total_duration_minutes', 0)} min")
+            with stats_col2:
+                st.metric("Word Count", f"{script.get('total_word_count', 0)}")
+
+            # 3-Act Structure
+            st.markdown("**📖 3-Act Structure:**")
+            structure = script.get('structure', {})
+            for act_key, act_data in structure.items():
+                with st.expander(f"{act_data.get('title', act_key)} - {act_data.get('duration_range', 'N/A')}", expanded=False):
+                    st.markdown(f"**Objective:** {act_data.get('objective', '')}")
+                    st.markdown("**Key Points:**")
+                    for point in act_data.get('key_points', []):
+                        st.caption(f"• {point}")
+
+            # Chapters
+            st.markdown("**🎬 Chapters:**")
+            chapters = script.get('chapters', [])
+            for chapter in chapters:
+                with st.expander(
+                    f"Chapter {chapter.get('chapter_number')}: {chapter.get('title')} ({chapter.get('start_time')} - {chapter.get('end_time')})",
+                    expanded=False
+                ):
+                    st.markdown("**📝 Narration:**")
+                    st.text_area(
+                        "Narrator Script",
+                        value=chapter.get('narration', ''),
+                        height=200,
+                        key=f"chapter_{chapter.get('chapter_number')}_narration",
+                        label_visibility="collapsed"
+                    )
+
+                    st.markdown("**🎥 B-Roll Shots:**")
+                    for shot in chapter.get('b_roll_shots', []):
+                        st.caption(f"• {shot}")
+
+                    if chapter.get('key_visuals'):
+                        st.markdown(f"**🖼️ Key Visuals:** {chapter.get('key_visuals')}")
+
+            # Download script
+            import json
+            script_json = json.dumps(script, indent=2)
+            st.download_button(
+                label="💾 Download Complete Script (JSON)",
+                data=script_json,
+                file_name=f"documentary_script_{script.get('title', 'untitled').replace(' ', '_')}.json",
+                mime="application/json",
+                use_container_width=True
+            )
+
+            # Export as text file
+            script_text_lines = []
+            script_text_lines.append("=" * 80)
+            script_text_lines.append(f"DOCUMENTARY SCRIPT: {script.get('title', 'Untitled')}")
+            script_text_lines.append("=" * 80)
+            script_text_lines.append(f"\nLogline: {script.get('logline', '')}")
+            script_text_lines.append(f"Duration: {script.get('total_duration_minutes', 0)} minutes")
+            script_text_lines.append(f"Word Count: {script.get('total_word_count', 0)}\n")
+            script_text_lines.append("=" * 80)
+
+            for chapter in chapters:
+                script_text_lines.append(f"\n\n{'=' * 80}")
+                script_text_lines.append(f"CHAPTER {chapter.get('chapter_number')}: {chapter.get('title')}")
+                script_text_lines.append(f"Time: {chapter.get('start_time')} - {chapter.get('end_time')}")
+                script_text_lines.append("=" * 80)
+                script_text_lines.append(f"\n{chapter.get('narration', '')}\n")
+                script_text_lines.append("\nB-ROLL:")
+                for shot in chapter.get('b_roll_shots', []):
+                    script_text_lines.append(f"- {shot}")
+
+            script_text = "\n".join(script_text_lines)
+
+            st.download_button(
+                label="📄 Download as Text File",
+                data=script_text,
+                file_name=f"documentary_script_{script.get('title', 'untitled').replace(' ', '_')}.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
+
+        else:
+            st.info("👆 Enter a topic and click **Generate Script** to create your documentary")
 
 # ================================
 # FOOTER
