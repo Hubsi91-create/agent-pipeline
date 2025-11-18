@@ -1141,116 +1141,254 @@ with tab4:
         st.info("👆 Click **Generate Video Production Plan** to create platform-optimized prompts for all scenes.")
 
 # ================================
-# TAB 5: POST-PRODUCTION
+# TAB 5: POST-PRODUCTION & DISTRIBUTION
 # ================================
 with tab5:
-    st.header("✂️ Post-Production")
-    st.markdown("CapCut integration and final editing guide")
+    st.header("✂️ Post-Production & Distribution")
+    st.markdown("CapCut editing guide + YouTube upload package")
 
-    col1, col2 = st.columns([2, 1])
+    # Session state for guides
+    if 'capcut_guide' not in st.session_state:
+        st.session_state.capcut_guide = None
+    if 'youtube_metadata' not in st.session_state:
+        st.session_state.youtube_metadata = None
+    if 'thumbnail_prompt' not in st.session_state:
+        st.session_state.thumbnail_prompt = None
 
+    col1, col2 = st.columns([1, 1])
+
+    # ================================
+    # LEFT COLUMN: CapCut Editing Guide
+    # ================================
     with col1:
-        st.subheader("CapCut Export Guide")
+        st.subheader("📹 CapCut Editing Guide")
+        st.markdown("Generate step-by-step editing instructions based on your scenes")
 
-        st.markdown("""
-        ### 📋 Workflow Steps:
+        # Generate button
+        if st.button("🎬 Generate CapCut Guide", use_container_width=True, type="primary"):
+            if 'processed_scenes' not in st.session_state or len(st.session_state.processed_scenes) == 0:
+                st.error("⚠️ No scenes found! Please process audio in Tab 2 first.")
+            else:
+                with st.spinner("Generating CapCut editing guide..."):
+                    try:
+                        # Get total audio duration if available
+                        audio_duration = None
+                        if st.session_state.processed_scenes:
+                            last_scene = st.session_state.processed_scenes[-1]
+                            audio_duration = last_scene.get('end', 0)
 
-        #### 1. Download Generated Videos
-        - Export all generated scene videos from Veo/Runway
-        - Organize in folders: `scene01/`, `scene02/`, etc.
+                        # Prepare request
+                        request_data = {
+                            "scenes": st.session_state.processed_scenes,
+                            "audio_duration": audio_duration
+                        }
 
-        #### 2. Import to CapCut
-        - Open CapCut Desktop
-        - Create New Project
-        - Import all scene videos + audio file
+                        # Call API
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/capcut/generate-guide",
+                            json=request_data,
+                            timeout=60
+                        )
 
-        #### 3. Timeline Assembly
-        ```
-        Timeline Structure:
-        ┌─────────────────────────────────┐
-        │ Audio Track (Master)            │
-        ├─────────────────────────────────┤
-        │ Scene 01 | Scene 02 | Scene 03  │
-        ├─────────────────────────────────┤
-        │ Transitions & Effects           │
-        └─────────────────────────────────┘
-        ```
+                        if response.status_code == 200:
+                            result = response.json()
+                            data = result.get('data', {})
 
-        #### 4. Sync to Music
-        - Use beat markers from audio analysis
-        - Align scene cuts to music beats
-        - Add transitions (0.5-1s crossfades)
+                            st.session_state.capcut_guide = data.get('guide')
 
-        #### 5. Color Grading
-        - Apply consistent LUT across all scenes
-        - Match brightness/contrast
-        - Adjust saturation for mood
+                            st.success(f"✅ {result.get('message', 'Guide generated!')}")
+                        else:
+                            st.error(f"❌ API Error: {response.text}")
 
-        #### 6. Final Export
-        - Resolution: 1920x1080 or 4K
-        - Format: MP4 (H.264)
-        - Bitrate: 20-50 Mbps
-        - FPS: Match source (24/30/60)
-        """)
+                    except Exception as e:
+                        st.error(f"❌ Failed to generate guide: {str(e)}")
 
         st.markdown("---")
 
-        st.subheader("Quick Export Settings")
+        # Display guide if generated
+        if st.session_state.capcut_guide:
+            st.markdown("### 📋 Your Editing Guide")
 
-        export_col1, export_col2 = st.columns(2)
+            # Display markdown guide
+            st.markdown(st.session_state.capcut_guide)
 
-        with export_col1:
-            export_res = st.selectbox("Export Resolution", ["1920x1080 (Full HD)", "3840x2160 (4K)", "1280x720 (HD)"])
-            export_fps = st.selectbox("Export FPS", [24, 30, 60])
+            # Download button
+            st.download_button(
+                label="💾 Download CapCut Guide (.md)",
+                data=st.session_state.capcut_guide,
+                file_name=f"capcut_guide_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+        else:
+            st.info("👆 Click **Generate CapCut Guide** to create your personalized editing instructions")
 
-        with export_col2:
-            export_bitrate = st.selectbox("Bitrate", ["20 Mbps", "30 Mbps", "50 Mbps"])
-            export_format = st.selectbox("Format", ["MP4 (H.264)", "MOV (ProRes)", "MP4 (H.265)"])
-
-        if st.button("📄 Generate CapCut Project Template", use_container_width=True):
-            st.success("✅ Template generated! Check downloads folder.")
-            st.code("""
-{
-  "project_name": "Music_Video_Production",
-  "timeline": {
-    "audio": "master_audio.wav",
-    "scenes": ["scene01.mp4", "scene02.mp4", "scene03.mp4"],
-    "transitions": "crossfade_0.5s"
-  },
-  "export": {
-    "resolution": "1920x1080",
-    "fps": 30,
-    "bitrate": "30 Mbps"
-  }
-}
-            """, language="json")
-
+    # ================================
+    # RIGHT COLUMN: YouTube Package
+    # ================================
     with col2:
-        st.subheader("Helpful Resources")
+        st.subheader("📺 YouTube Upload Package")
+        st.markdown("Generate viral metadata + thumbnail prompt")
 
-        st.markdown("""
-        **CapCut Tutorials:**
-        - [Basic Editing](https://capcut.com)
-        - [Beat Sync Guide](https://capcut.com)
-        - [Color Grading](https://capcut.com)
+        # Input fields
+        final_song_title = st.text_input(
+            "Final Song Title",
+            value=st.session_state.get('song_title', ''),
+            placeholder="e.g., Midnight Dreams"
+        )
 
-        **Keyboard Shortcuts:**
-        - `Space`: Play/Pause
-        - `C`: Cut clip
-        - `Delete`: Remove clip
-        - `Ctrl+Z`: Undo
-        - `Ctrl+S`: Save
-        """)
+        final_artist = st.text_input(
+            "Artist Name",
+            value=st.session_state.get('artist', ''),
+            placeholder="e.g., Phoenix"
+        )
+
+        yt_col1, yt_col2 = st.columns(2)
+
+        with yt_col1:
+            genre_input = st.text_input("Genre (optional)", placeholder="e.g., Electronic")
+
+        with yt_col2:
+            mood_input = st.text_input("Mood (optional)", placeholder="e.g., Energetic")
+
+        # Style selector
+        style_options_yt = ["None"] + [style["name"] for style in st.session_state.available_styles]
+        selected_style_yt = st.selectbox(
+            "Visual Style (optional)",
+            options=style_options_yt,
+            help="Select the visual style used in your video"
+        )
+
+        # Generate button
+        if st.button("🚀 Generate YouTube Package", use_container_width=True, type="primary"):
+            if not final_song_title or not final_artist:
+                st.error("⚠️ Please enter both song title and artist name")
+            else:
+                with st.spinner("Generating YouTube package with AI..."):
+                    try:
+                        # Prepare request for metadata
+                        metadata_request = {
+                            "song_title": final_song_title,
+                            "artist": final_artist,
+                            "genre": genre_input if genre_input else None,
+                            "mood": mood_input if mood_input else None,
+                            "style_name": selected_style_yt if selected_style_yt != "None" else None
+                        }
+
+                        # Call metadata API
+                        metadata_response = requests.post(
+                            f"{API_BASE_URL}/api/v1/youtube/generate-metadata",
+                            json=metadata_request,
+                            timeout=60
+                        )
+
+                        # Call thumbnail API
+                        thumbnail_request = {
+                            "song_title": final_song_title,
+                            "artist": final_artist,
+                            "style_name": selected_style_yt if selected_style_yt != "None" else None,
+                            "mood": mood_input if mood_input else None
+                        }
+
+                        thumbnail_response = requests.post(
+                            f"{API_BASE_URL}/api/v1/youtube/generate-thumbnail",
+                            json=thumbnail_request,
+                            timeout=60
+                        )
+
+                        if metadata_response.status_code == 200 and thumbnail_response.status_code == 200:
+                            metadata_result = metadata_response.json()
+                            thumbnail_result = thumbnail_response.json()
+
+                            st.session_state.youtube_metadata = metadata_result.get('data', {})
+                            st.session_state.thumbnail_prompt = thumbnail_result.get('data', {}).get('prompt')
+
+                            st.success("✅ YouTube package generated!")
+                            st.balloons()
+                        else:
+                            st.error(f"❌ API Error")
+
+                    except Exception as e:
+                        st.error(f"❌ Failed to generate package: {str(e)}")
 
         st.markdown("---")
 
-        st.info("""
-        **Pro Tips:**
-        - Save often (Ctrl+S)
-        - Use proxy mode for 4K
-        - Export test clip first
-        - Keep backup of project
-        """)
+        # Display YouTube package if generated
+        if st.session_state.youtube_metadata:
+            metadata = st.session_state.youtube_metadata
+
+            st.markdown("### 📦 Your YouTube Package")
+
+            # Title
+            st.markdown("**📌 Title** (click to copy)")
+            st.code(metadata.get('title', ''), language=None)
+
+            # Description
+            st.markdown("**📝 Description**")
+            st.text_area(
+                "Description",
+                value=metadata.get('description', ''),
+                height=200,
+                key="yt_description",
+                label_visibility="collapsed"
+            )
+
+            # Tags
+            st.markdown("**🏷️ Tags**")
+            tags_text = ", ".join(metadata.get('tags', []))
+            st.code(tags_text, language=None)
+
+            # Hashtags
+            if metadata.get('hashtags'):
+                st.markdown("**#️⃣ Hashtags**")
+                hashtags_text = " ".join(metadata.get('hashtags', []))
+                st.code(hashtags_text, language=None)
+
+            st.markdown("---")
+
+            # Thumbnail prompt
+            if st.session_state.thumbnail_prompt:
+                st.markdown("**🖼️ Thumbnail Prompt** (for Imagen 3 / Midjourney)")
+                st.text_area(
+                    "Thumbnail Prompt",
+                    value=st.session_state.thumbnail_prompt,
+                    height=150,
+                    key="thumbnail_prompt_display",
+                    label_visibility="collapsed"
+                )
+
+                st.caption("Use this prompt with Imagen 3, Midjourney, or DALL-E to generate your thumbnail")
+
+            # Download all as text file
+            package_text = f"""YOUTUBE UPLOAD PACKAGE
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+==================== TITLE ====================
+{metadata.get('title', '')}
+
+==================== DESCRIPTION ====================
+{metadata.get('description', '')}
+
+==================== TAGS ====================
+{tags_text}
+
+==================== HASHTAGS ====================
+{hashtags_text if metadata.get('hashtags') else 'N/A'}
+
+==================== THUMBNAIL PROMPT ====================
+{st.session_state.thumbnail_prompt if st.session_state.thumbnail_prompt else 'N/A'}
+"""
+
+            st.download_button(
+                label="💾 Download Complete Package (.txt)",
+                data=package_text,
+                file_name=f"youtube_package_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
+
+        else:
+            st.info("👆 Fill in the details and click **Generate YouTube Package**")
 
 # ================================
 # FOOTER

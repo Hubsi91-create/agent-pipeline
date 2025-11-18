@@ -789,3 +789,179 @@ async def batch_validate_prompts(request: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Batch validation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Phase D: Post-Production & Distribution ====================
+
+@router.post("/capcut/generate-guide", response_model=APIResponse)
+async def generate_capcut_guide(request: Dict[str, Any]):
+    """
+    Generate CapCut editing guide (Edit Decision List)
+
+    Process:
+    1. Analyzes scene timings and energy levels
+    2. Loads CapCut effects from A9_CapCut_Effects database
+    3. Creates step-by-step markdown editing guide
+    4. Recommends effects based on energy (low → glow/blur, high → shake/strobe)
+
+    Args:
+        scenes: List of scene dicts with timing, energy, type
+        audio_duration: Total audio duration (optional)
+
+    Returns:
+        Markdown-formatted editing guide
+    """
+    try:
+        from app.agents.agent_9_capcut.service import agent9_service
+
+        scenes = request.get("scenes", [])
+        audio_duration = request.get("audio_duration")
+
+        if not scenes:
+            raise HTTPException(status_code=400, detail="scenes list is required")
+
+        logger.info(f"Generating CapCut guide for {len(scenes)} scenes")
+
+        # Generate guide
+        guide_markdown = await agent9_service.generate_edit_guide(
+            scenes=scenes,
+            audio_duration=audio_duration
+        )
+
+        return APIResponse(
+            success=True,
+            message=f"CapCut guide generated for {len(scenes)} scenes",
+            data={
+                "guide": guide_markdown,
+                "scene_count": len(scenes)
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"CapCut guide generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/youtube/generate-metadata", response_model=APIResponse)
+async def generate_youtube_metadata(request: Dict[str, Any]):
+    """
+    Generate viral YouTube metadata package
+
+    Process:
+    1. Uses Gemini AI to create click-worthy title
+    2. Generates SEO-optimized description
+    3. Creates 15-20 relevant tags
+    4. Extracts top 5 hashtags
+
+    Args:
+        song_title: Song title
+        artist: Artist name
+        genre: Music genre (optional)
+        mood: Song mood (optional)
+        style_name: Visual style name (optional)
+
+    Returns:
+        Dict with title, description, tags, hashtags
+    """
+    try:
+        from app.agents.agent_10_youtube.service import agent10_service
+        from app.agents.agent_5_style_anchors.service import agent5_service
+
+        song_title = request.get("song_title")
+        artist = request.get("artist")
+        genre = request.get("genre")
+        mood = request.get("mood")
+        style_name = request.get("style_name")
+
+        if not song_title or not artist:
+            raise HTTPException(status_code=400, detail="song_title and artist are required")
+
+        logger.info(f"Generating YouTube metadata for '{song_title}' by {artist}")
+
+        # Load style if specified
+        style = None
+        if style_name:
+            all_styles = await agent5_service.get_available_styles()
+            style = next((s for s in all_styles if s["name"] == style_name), None)
+
+        # Generate metadata
+        metadata = await agent10_service.generate_metadata(
+            song_title=song_title,
+            artist=artist,
+            genre=genre,
+            mood=mood,
+            style=style
+        )
+
+        return APIResponse(
+            success=True,
+            message="YouTube metadata generated successfully",
+            data=metadata
+        )
+
+    except Exception as e:
+        logger.error(f"YouTube metadata generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/youtube/generate-thumbnail", response_model=APIResponse)
+async def generate_thumbnail_prompt(request: Dict[str, Any]):
+    """
+    Generate thumbnail image prompt for Imagen 3 / Midjourney
+
+    Process:
+    1. Analyzes song title, artist, and visual style
+    2. Creates detailed image generation prompt
+    3. Optimized for 16:9 YouTube thumbnail format
+    4. Focuses on click-worthy, eye-catching composition
+
+    Args:
+        song_title: Song title
+        artist: Artist name
+        style_name: Visual style name (optional)
+        mood: Song mood (optional)
+
+    Returns:
+        Image generation prompt string
+    """
+    try:
+        from app.agents.agent_10_youtube.service import agent10_service
+        from app.agents.agent_5_style_anchors.service import agent5_service
+
+        song_title = request.get("song_title")
+        artist = request.get("artist")
+        style_name = request.get("style_name")
+        mood = request.get("mood")
+
+        if not song_title or not artist:
+            raise HTTPException(status_code=400, detail="song_title and artist are required")
+
+        logger.info(f"Generating thumbnail prompt for '{song_title}'")
+
+        # Load style if specified
+        style = None
+        if style_name:
+            all_styles = await agent5_service.get_available_styles()
+            style = next((s for s in all_styles if s["name"] == style_name), None)
+
+        # Generate thumbnail prompt
+        thumbnail_prompt = await agent10_service.generate_thumbnail_prompt(
+            song_title=song_title,
+            artist=artist,
+            style=style,
+            mood=mood
+        )
+
+        return APIResponse(
+            success=True,
+            message="Thumbnail prompt generated successfully",
+            data={
+                "prompt": thumbnail_prompt,
+                "format": "1280x720px (16:9)",
+                "platform": "Imagen 3 / Midjourney"
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Thumbnail prompt generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
