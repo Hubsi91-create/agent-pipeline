@@ -28,9 +28,10 @@ RUN chmod +x start.sh
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV ENVIRONMENT=production
+ENV PORT=8080
 
-# Expose ports (8000 for FastAPI, 8080 for Streamlit)
-EXPOSE 8000 8080
+# Expose port 8080 (Streamlit on Cloud Run's $PORT)
+EXPOSE 8080
 
 # Run dual-service startup script
 CMD ["./start.sh"]
