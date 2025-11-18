@@ -849,6 +849,145 @@ with tab3:
                             st.error(f"❌ Error: {str(e)}")
 
     # ================================
+    # MIDDLE: AI STYLE GENERATOR (IMAGEN 4)
+    # ================================
+    st.markdown("---")
+    st.subheader("🎨 AI Style Generator (Imagen 4)")
+    st.markdown("**Describe your desired visual style, and AI will generate a reference image**")
+
+    # Session state for generated style
+    if 'generated_style_image' not in st.session_state:
+        st.session_state.generated_style_image = None
+    if 'generated_style_suffix' not in st.session_state:
+        st.session_state.generated_style_suffix = None
+
+    imagen_col1, imagen_col2 = st.columns([1, 1])
+
+    with imagen_col1:
+        st.markdown("**Text-to-Image Style Generation:**")
+
+        # Text input for style description
+        style_prompt = st.text_area(
+            "Describe your desired look",
+            value="",
+            placeholder="e.g., 'Cyberpunk city at night, neon lights, rain-soaked streets, cinematic film noir aesthetic'\n\nor 'Vintage 1970s Polaroid, warm tones, soft focus, nostalgic summer vibes'",
+            height=120,
+            key="imagen_style_prompt"
+        )
+
+        # Aspect ratio selector
+        aspect_ratio_options = {
+            "1:1 Square": "1:1",
+            "16:9 Widescreen": "16:9",
+            "9:16 Portrait": "9:16",
+            "4:3 Standard": "4:3"
+        }
+        aspect_ratio_display = st.selectbox(
+            "Aspect Ratio",
+            options=list(aspect_ratio_options.keys()),
+            index=0
+        )
+        aspect_ratio = aspect_ratio_options[aspect_ratio_display]
+
+        # Generate button
+        if st.button("✨ Generate with Imagen 4", type="primary", use_container_width=True):
+            if not style_prompt:
+                st.error("⚠️ Please describe the visual style you want to generate")
+            else:
+                with st.spinner("Generating style reference with Imagen 4..."):
+                    try:
+                        # Call API
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/styles/generate",
+                            json={
+                                "prompt": style_prompt,
+                                "aspect_ratio": aspect_ratio,
+                                "save_to_database": False
+                            },
+                            timeout=120
+                        )
+
+                        if response.status_code == 200:
+                            result = response.json().get('data', {})
+
+                            st.session_state.generated_style_image = result.get('image_base64')
+                            st.session_state.generated_style_suffix = result.get('style_suffix')
+
+                            if result.get('success'):
+                                st.success(f"✅ Style reference generated with {result.get('model', 'Imagen')}!")
+                            else:
+                                st.info(f"ℹ️ {result.get('note', 'Placeholder generated (Imagen not configured)')}")
+
+                        else:
+                            st.error("❌ Style generation failed")
+
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+
+    with imagen_col2:
+        st.markdown("**Generated Style:**")
+
+        # Display generated image
+        if st.session_state.generated_style_image:
+            import base64
+            from io import BytesIO
+
+            # Decode base64 image
+            image_data = base64.b64decode(st.session_state.generated_style_image)
+
+            # Display image
+            st.image(image_data, caption="AI-Generated Style Reference", use_container_width=True)
+
+            # Display extracted style suffix
+            if st.session_state.generated_style_suffix:
+                st.markdown("**🎬 Extracted Style Suffix:**")
+                st.code(st.session_state.generated_style_suffix, language=None)
+
+            st.markdown("---")
+
+            # Option to save as style
+            save_style_name = st.text_input(
+                "Save this style as:",
+                placeholder="e.g., 'My Cyberpunk Look'",
+                key="save_generated_style_name"
+            )
+
+            if st.button("💾 Use as Anchor & Save Style", type="secondary", use_container_width=True):
+                if not save_style_name:
+                    st.error("⚠️ Please enter a name for the style")
+                else:
+                    with st.spinner(f"Saving '{save_style_name}' to database..."):
+                        try:
+                            # Call API to save
+                            response = requests.post(
+                                f"{API_BASE_URL}/api/v1/styles/generate",
+                                json={
+                                    "prompt": style_prompt,
+                                    "style_name": save_style_name,
+                                    "aspect_ratio": aspect_ratio,
+                                    "save_to_database": True
+                                },
+                                timeout=120
+                            )
+
+                            if response.status_code == 200:
+                                result = response.json().get('data', {})
+                                if result.get('saved'):
+                                    st.success(f"✅ {result.get('message')}")
+                                    # Clear cache
+                                    st.session_state.available_styles = []
+                                    st.balloons()
+                                else:
+                                    st.warning(f"⚠️ {result.get('message')}")
+                            else:
+                                st.error("❌ Failed to save style")
+
+                        except Exception as e:
+                            st.error(f"❌ Error: {str(e)}")
+        else:
+            st.info("👈 Enter a description and click **Generate** to create a style reference image")
+
+    # ================================
     # BOTTOM: SCENE IMAGES GALLERY
     # ================================
     st.markdown("---")
@@ -1107,6 +1246,38 @@ with tab4:
                     elif status == 'error':
                         st.error(f"❌ Issues: {', '.join(veo.get('issues_found', []))}")
 
+                # Mark as Gold Standard button (Feedback Loop)
+                if st.button(f"⭐ Mark as Gold Standard", key=f"gold_veo_{i}", help="Save this prompt for Few-Shot Learning"):
+                    with st.spinner("Saving to learning database..."):
+                        try:
+                            # Get scene info for description
+                            scene_desc = f"Scene {i+1}"
+                            if 'processed_scenes' in st.session_state and i < len(st.session_state.processed_scenes):
+                                scene = st.session_state.processed_scenes[i]
+                                scene_desc = f"{scene.get('type', 'Scene')} at {scene.get('start', 0):.1f}s"
+
+                            # Call API
+                            response = requests.post(
+                                f"{API_BASE_URL}/api/v1/prompts/mark-gold-standard",
+                                json={
+                                    "model": "veo",
+                                    "prompt": veo.get('prompt', ''),
+                                    "scene_description": scene_desc,
+                                    "energy": scene.get('energy', 'medium') if 'processed_scenes' in st.session_state and i < len(st.session_state.processed_scenes) else 'medium'
+                                },
+                                timeout=30
+                            )
+
+                            if response.status_code == 200:
+                                result = response.json()
+                                st.success(f"✅ {result.get('message', 'Added to learning database!')}")
+                                st.info("🧠 Future prompt generations will learn from this example")
+                            else:
+                                st.error("❌ Failed to save")
+
+                        except Exception as e:
+                            st.error(f"❌ Error: {str(e)}")
+
                 st.markdown("---")
 
                 # Runway prompt
@@ -1136,6 +1307,38 @@ with tab4:
                         st.warning(f"⚠️ Corrected: {', '.join(runway.get('corrections_made', []))}")
                     elif status == 'error':
                         st.error(f"❌ Issues: {', '.join(runway.get('issues_found', []))}")
+
+                # Mark as Gold Standard button (Feedback Loop)
+                if st.button(f"⭐ Mark as Gold Standard", key=f"gold_runway_{i}", help="Save this prompt for Few-Shot Learning"):
+                    with st.spinner("Saving to learning database..."):
+                        try:
+                            # Get scene info for description
+                            scene_desc = f"Scene {i+1}"
+                            if 'processed_scenes' in st.session_state and i < len(st.session_state.processed_scenes):
+                                scene = st.session_state.processed_scenes[i]
+                                scene_desc = f"{scene.get('type', 'Scene')} at {scene.get('start', 0):.1f}s"
+
+                            # Call API
+                            response = requests.post(
+                                f"{API_BASE_URL}/api/v1/prompts/mark-gold-standard",
+                                json={
+                                    "model": "runway",
+                                    "prompt": runway.get('prompt', ''),
+                                    "scene_description": scene_desc,
+                                    "energy": scene.get('energy', 'medium') if 'processed_scenes' in st.session_state and i < len(st.session_state.processed_scenes) else 'medium'
+                                },
+                                timeout=30
+                            )
+
+                            if response.status_code == 200:
+                                result = response.json()
+                                st.success(f"✅ {result.get('message', 'Added to learning database!')}")
+                                st.info("🧠 Future prompt generations will learn from this example")
+                            else:
+                                st.error("❌ Failed to save")
+
+                        except Exception as e:
+                            st.error(f"❌ Error: {str(e)}")
 
     else:
         st.info("👆 Click **Generate Video Production Plan** to create platform-optimized prompts for all scenes.")

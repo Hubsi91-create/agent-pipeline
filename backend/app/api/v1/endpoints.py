@@ -965,3 +965,130 @@ async def generate_thumbnail_prompt(request: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Thumbnail prompt generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Phase E: Self-Learning & Imagen Integration ====================
+
+@router.post("/styles/generate", response_model=APIResponse)
+async def generate_style_with_imagen(request: Dict[str, Any]):
+    """
+    Generate a visual style reference image using Imagen 3.0/4
+
+    Process:
+    1. Generates image from text prompt using Imagen
+    2. Analyzes generated image with Gemini Vision
+    3. Extracts style suffix for video prompts
+    4. Optionally saves to A5_Style_Database
+
+    Args:
+        prompt: Text description of desired style
+        style_name: Name for the style (optional, required if save=True)
+        aspect_ratio: Image aspect ratio (default: "1:1")
+        save_to_database: Whether to save the style (default: False)
+
+    Returns:
+        Dict with:
+        - image_base64: Base64-encoded generated image
+        - style_suffix: Extracted style description
+        - success: Generation status
+    """
+    try:
+        from app.agents.agent_5_style_anchors.service import agent5_service
+
+        prompt = request.get("prompt")
+        style_name = request.get("style_name")
+        aspect_ratio = request.get("aspect_ratio", "1:1")
+        save_to_database = request.get("save_to_database", False)
+
+        if not prompt:
+            raise HTTPException(status_code=400, detail="prompt is required")
+
+        if save_to_database and not style_name:
+            raise HTTPException(status_code=400, detail="style_name is required when save_to_database=True")
+
+        logger.info(f"Generating style reference with Imagen: {prompt[:100]}")
+
+        # Generate style reference
+        result = await agent5_service.generate_style_reference(
+            prompt=prompt,
+            style_name=style_name,
+            aspect_ratio=aspect_ratio,
+            save_to_database=save_to_database
+        )
+
+        return APIResponse(
+            success=result.get("success", False),
+            message=result.get("message", "Style reference generated"),
+            data=result
+        )
+
+    except Exception as e:
+        logger.error(f"Style generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/prompts/mark-gold-standard", response_model=APIResponse)
+async def mark_prompt_as_gold_standard(request: Dict[str, Any]):
+    """
+    Mark a prompt as gold standard for Few-Shot Learning (Feedback Loop)
+
+    This enables self-learning: good prompts are saved to A6_Video_Examples
+    and become part of the Few-Shot Learning knowledge base for future generations.
+
+    Process:
+    1. Receives a prompt + scene description
+    2. Saves to A6_Video_Examples database
+    3. Future prompt generations will learn from this example
+
+    Args:
+        model: Model type ("veo" or "runway")
+        prompt: The prompt text to save
+        scene_description: Brief description of the scene
+        energy: Energy level (low, medium, high)
+
+    Returns:
+        Success status and confirmation message
+    """
+    try:
+        from app.agents.agent_6_veo_prompter.service import agent6_service
+        from app.agents.agent_7_runway_prompter.service import agent7_service
+
+        model = request.get("model")
+        prompt = request.get("prompt")
+        scene_description = request.get("scene_description", "")
+        energy = request.get("energy", "medium")
+
+        if not model or not prompt:
+            raise HTTPException(status_code=400, detail="model and prompt are required")
+
+        if model not in ["veo", "runway"]:
+            raise HTTPException(status_code=400, detail="model must be 'veo' or 'runway'")
+
+        logger.info(f"Marking {model} prompt as gold standard")
+
+        # Save to appropriate agent
+        if model == "veo":
+            result = await agent6_service.save_as_gold_standard(
+                prompt=prompt,
+                scene_description=scene_description,
+                energy=energy
+            )
+        else:  # runway
+            result = await agent7_service.save_as_gold_standard(
+                prompt=prompt,
+                scene_description=scene_description,
+                energy=energy
+            )
+
+        if result.get("success"):
+            return APIResponse(
+                success=True,
+                message=f"✅ {result.get('message')} - System will learn from this prompt!",
+                data=result
+            )
+        else:
+            raise HTTPException(status_code=500, detail=result.get("message"))
+
+    except Exception as e:
+        logger.error(f"Failed to mark prompt as gold standard: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

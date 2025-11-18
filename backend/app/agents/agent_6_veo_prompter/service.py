@@ -198,6 +198,73 @@ Generate ONLY the narrative prompt, no explanation:"""
 
         return "\n".join(lines)
 
+    async def save_as_gold_standard(
+        self,
+        prompt: str,
+        scene_description: str,
+        energy: str = "medium"
+    ) -> Dict[str, Any]:
+        """
+        Save a generated prompt as a gold standard example (Feedback Loop)
+
+        This enables the system to learn from its own successes.
+        Good prompts are saved to A6_Video_Examples and become part
+        of the Few-Shot Learning knowledge base for future generations.
+
+        Args:
+            prompt: The generated Veo prompt to save
+            scene_description: Brief description of the scene
+            energy: Energy level (low, medium, high)
+
+        Returns:
+            Dict with success status and message
+        """
+        logger.info(f"Saving Veo prompt as gold standard: {prompt[:50]}...")
+
+        try:
+            from datetime import datetime
+
+            # Prepare data for A6_Video_Examples sheet
+            timestamp = datetime.now().isoformat()
+            data = [
+                "veo",  # model
+                prompt,  # prompt
+                energy,  # category/energy level
+                scene_description,  # description
+                timestamp,  # created_at
+                "auto-learned"  # source
+            ]
+
+            # Append to Google Sheets
+            success = await google_sheet_service.append_row(
+                SHEET_A6_VIDEO_EXAMPLES,
+                data
+            )
+
+            if success:
+                # Clear cache to force reload with new example
+                self._examples_cache = None
+
+                logger.info(f"✅ Veo prompt saved to gold standards")
+                return {
+                    "success": True,
+                    "message": "Prompt added to Few-Shot Learning database",
+                    "model": "veo"
+                }
+            else:
+                logger.error("Failed to save prompt to database")
+                return {
+                    "success": False,
+                    "message": "Failed to save to database"
+                }
+
+        except Exception as e:
+            logger.error(f"Error saving gold standard: {e}")
+            return {
+                "success": False,
+                "message": f"Error: {str(e)}"
+            }
+
 
 # Singleton instance
 agent6_service = Agent6VeoPrompter()
