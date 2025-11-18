@@ -40,7 +40,8 @@ class GeminiService:
 
         try:
             genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
+            # Use gemini-1.5-pro for better tool support (including Google Search Grounding)
+            self.model = genai.GenerativeModel('gemini-1.5-pro')
             self.vision_model = genai.GenerativeModel('gemini-1.5-pro')  # Vision support
 
             # Try to initialize Imagen model (if available in API)
@@ -63,7 +64,8 @@ class GeminiService:
         self,
         prompt: str,
         temperature: float = 0.7,
-        max_tokens: int = 2048
+        max_tokens: int = 2048,
+        use_search: bool = False
     ) -> str:
         """
         Generate text using Gemini
@@ -72,6 +74,7 @@ class GeminiService:
             prompt: The prompt to send to Gemini
             temperature: Creativity level (0.0 to 1.0)
             max_tokens: Maximum tokens to generate
+            use_search: If True, enables Google Search Grounding for real-time web data
 
         Returns:
             Generated text
@@ -86,9 +89,22 @@ class GeminiService:
                 max_output_tokens=max_tokens
             )
 
+            # Configure Google Search Grounding if requested
+            tools = None
+            if use_search:
+                try:
+                    # Google Search Grounding for real-time web data
+                    from google.generativeai import protos
+                    tools = [protos.Tool(google_search_retrieval=protos.GoogleSearchRetrieval())]
+                    logger.info("Google Search Grounding enabled for this request")
+                except Exception as search_err:
+                    logger.warning(f"Could not enable Google Search Grounding: {search_err}")
+                    tools = None
+
             response = self.model.generate_content(
                 prompt,
-                generation_config=generation_config
+                generation_config=generation_config,
+                tools=tools
             )
 
             return response.text

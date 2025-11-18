@@ -171,18 +171,20 @@ class Agent1ProjectManager:
 
         search_query = f"Latest viral music trends TikTok Spotify YouTube Shorts {current_month} {current_year} music video aesthetics"
 
-        prompt = f"""You are a music trend analyst with access to current internet data.
+        prompt = f"""You are a music trend analyst with REAL-TIME access to Google Search data.
+
+CRITICAL: You MUST use the Google Search tool to find CURRENT, LIVE data. Do NOT rely on training data.
 
 SEARCH QUERY: "{search_query}"
 
 Your task: Identify the TOP 20 VIRAL MUSIC TRENDS right now (as of {current_month} {current_year}).
 
 REQUIREMENTS:
-1. Focus on ACTUAL viral genres/styles trending on TikTok, Spotify, and YouTube Shorts
+1. USE GOOGLE SEARCH to find ACTUAL viral genres/styles trending on TikTok, Spotify, and YouTube Shorts RIGHT NOW
 2. Include both audio trends AND visual aesthetics (e.g., "Dirty Aesthetic", "Slowed + Reverb")
-3. Prioritize genres that are CURRENTLY viral (not just established genres)
+3. Prioritize genres that are CURRENTLY viral in {current_month} {current_year} (not just established genres)
 4. Mix platforms: ~40% TikTok, ~30% YouTube Shorts, ~30% Spotify
-5. Each trend must be REAL and SPECIFIC (not generic)
+5. Each trend must be REAL and SPECIFIC (not generic) - verify with Google Search results
 
 KEY TRENDS TO CONSIDER (if currently viral):
 - Phonk variants (Drift Phonk, Brazilian Phonk)
@@ -218,8 +220,8 @@ TREND SCORE GUIDE:
 Generate exactly 20 trends in JSON format."""
 
         try:
-            # Get AI response with current trend knowledge
-            ai_response = await gemini_service.generate_text(prompt)
+            # Get AI response with Google Search Grounding for real-time data
+            ai_response = await gemini_service.generate_text(prompt, use_search=True)
 
             # Parse JSON response
             json_str = ai_response.strip()
