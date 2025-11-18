@@ -367,22 +367,26 @@ with tab1:
                             st.session_state.generated_prompts = []
 
                             # Trigger variation generation
-                            with st.spinner(f"Generating 20 {genre} variations..."):
+                            with st.spinner(f"Generating 20 {genre} variations with AI..."):
                                 try:
                                     response = requests.post(
                                         f"{API_BASE_URL}/api/v1/genres/variations",
                                         json={"super_genre": genre, "num_variations": 20},
-                                        timeout=10
+                                        timeout=30  # Increased for complex AI generation
                                     )
                                     if response.status_code == 200:
                                         st.session_state.genre_variations = response.json().get('data', [])
                                     else:
+                                        # Show error message to user
+                                        st.error(f"⚠️ API Error ({response.status_code}): {response.text[:200]}")
                                         # Fallback mock
                                         st.session_state.genre_variations = [
                                             {"subgenre": f"{genre} Style {i+1}", "description": f"Variation {i+1}"}
                                             for i in range(20)
                                         ]
-                                except:
+                                except Exception as e:
+                                    # Show exception details to user
+                                    st.error(f"❌ Request failed: {str(e)}")
                                     # Fallback mock
                                     st.session_state.genre_variations = [
                                         {"subgenre": f"{genre} Style {i+1}", "description": f"Variation {i+1}"}
