@@ -1092,3 +1092,113 @@ async def mark_prompt_as_gold_standard(request: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Failed to mark prompt as gold standard: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Phase F: Doku-Studio (Agents 12 & 13) ====================
+
+@router.post("/documentary/analyze-style", response_model=APIResponse)
+async def analyze_documentary_style(request: Dict[str, Any]):
+    """
+    Analyze a documentary video to extract its style template (Reverse Engineering)
+
+    Process:
+    1. Extract transcript from YouTube URL
+    2. Analyze pacing (words per minute, cut frequency)
+    3. Extract keywords and B-roll suggestions with AI
+    4. Generate comprehensive style template
+
+    Args:
+        video_url: YouTube URL (optional)
+        transcript_text: Pre-extracted transcript (optional, alternative to URL)
+
+    Returns:
+        StyleTemplate with pacing, tone, visual style, keywords, B-roll suggestions
+    """
+    try:
+        from app.agents.agent_12_style_analyst.service import agent12_service
+
+        video_url = request.get("video_url")
+        transcript_text = request.get("transcript_text")
+
+        if not video_url and not transcript_text:
+            raise HTTPException(
+                status_code=400,
+                detail="Either video_url or transcript_text is required"
+            )
+
+        logger.info(f"Analyzing documentary style from {'URL' if video_url else 'transcript'}")
+
+        # Analyze style
+        style_template = await agent12_service.analyze_video_style(
+            video_url=video_url,
+            transcript_text=transcript_text
+        )
+
+        if not style_template.get("success"):
+            raise HTTPException(
+                status_code=500,
+                detail=style_template.get("error", "Style analysis failed")
+            )
+
+        return APIResponse(
+            success=True,
+            message=f"Style template extracted: {style_template.get('template_name')}",
+            data=style_template
+        )
+
+    except Exception as e:
+        logger.error(f"Documentary style analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/documentary/generate-script", response_model=APIResponse)
+async def generate_documentary_script(request: Dict[str, Any]):
+    """
+    Generate a complete documentary script using 3-Act structure
+
+    Process:
+    1. Takes topic and optional style template
+    2. Uses Gemini Pro to create 15-minute documentary script
+    3. Applies 3-Act structure: Hook (0-2min), Conflict (2-10min), Resolution (10-15min)
+    4. Generates chapters with full narration and B-roll suggestions
+
+    Args:
+        topic: Documentary topic (e.g., "The Rise of AI")
+        duration_minutes: Total duration (default: 15)
+        style_template: Optional style template from Agent 12 (for style cloning)
+
+    Returns:
+        Complete documentary script with:
+        - chapters: List of chapter objects with timing
+        - narration: Full narrator script
+        - b_roll: B-roll suggestions for each chapter
+        - structure: 3-act breakdown
+    """
+    try:
+        from app.agents.agent_13_story_architect.service import agent13_service
+
+        topic = request.get("topic")
+        duration_minutes = request.get("duration_minutes", 15)
+        style_template = request.get("style_template")
+
+        if not topic:
+            raise HTTPException(status_code=400, detail="topic is required")
+
+        logger.info(f"Generating documentary script for topic: {topic}")
+
+        # Generate script
+        script = await agent13_service.create_3_act_structure(
+            topic=topic,
+            duration_minutes=duration_minutes,
+            style_template=style_template
+        )
+
+        return APIResponse(
+            success=True,
+            message=f"Documentary script generated: {script.get('title', 'Untitled')}",
+            data=script
+        )
+
+    except Exception as e:
+        logger.error(f"Documentary script generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
