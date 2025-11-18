@@ -434,3 +434,86 @@ async def update_viral_trends():
     except Exception as e:
         logger.error(f"Failed to update viral trends: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Phase B: Audio Analysis & Scene Planning ====================
+
+@router.post("/audio/analyze", response_model=APIResponse)
+async def analyze_audio(file: bytes, filename: str):
+    """
+    Analyze audio file and create smart scene breakdown
+
+    Process:
+    1. Agent 3 analyzes audio (RMS energy, BPM, sections)
+    2. Detects Intro/Verse/Chorus based on energy changes
+    3. Smart-splits sections into ≤8s chunks (Veo/Runway limit)
+    4. Returns scene list with start, end, energy, type
+
+    Args:
+        file: Audio file bytes (WAV/MP3)
+        filename: Original filename
+
+    Returns:
+        Scenes list with timing and energy data
+    """
+    try:
+        logger.info(f"Analyzing audio file: {filename}")
+
+        # Call Agent 3 for audio analysis
+        analysis_result = await agent3_service.analyze_audio_file(
+            audio_file_bytes=file,
+            filename=filename,
+            max_scene_duration=8.0  # Veo/Runway limit
+        )
+
+        return APIResponse(
+            success=True,
+            message=f"Audio analyzed: {analysis_result['total_scenes']} scenes created",
+            data=analysis_result
+        )
+
+    except Exception as e:
+        logger.error(f"Audio analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/scenes/process", response_model=APIResponse)
+async def process_scenes(scenes: list[Dict[str, Any]], project_id: str = None, use_ai: bool = True):
+    """
+    Process scenes with Agent 4 "The Director"
+
+    Process:
+    1. Takes scene list from Agent 3
+    2. Loads Video_Prompt_Cheatsheet from Google Sheets
+    3. Maps energy levels to camera/lighting:
+       - Low energy → Slow Zoom, Soft lighting
+       - High energy → Whip Pan, Strobe lighting
+    4. Generates cinematic descriptions (AI or templates)
+
+    Args:
+        scenes: List of scenes from audio analysis
+        project_id: Optional project ID
+        use_ai: Use Gemini AI for descriptions (default: True)
+
+    Returns:
+        Enhanced scenes with camera, lighting, description
+    """
+    try:
+        logger.info(f"Processing {len(scenes)} scenes with Agent 4")
+
+        # Call Agent 4 for scene enhancement
+        enhanced_scenes = await agent4_service.process_scenes(
+            scenes=scenes,
+            project_id=project_id,
+            use_ai_enhancement=use_ai
+        )
+
+        return APIResponse(
+            success=True,
+            message=f"Processed {len(enhanced_scenes)} scenes with directing details",
+            data={"scenes": enhanced_scenes}
+        )
+
+    except Exception as e:
+        logger.error(f"Scene processing failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
