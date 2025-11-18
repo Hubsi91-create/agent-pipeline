@@ -1903,6 +1903,390 @@ with tab6:
         else:
             st.info("👆 Enter a topic and click **Generate Script** to create your documentary")
 
+    # ================================
+    # PRODUCTION WORKFLOW (Agents 14-17)
+    # ================================
+    if st.session_state.doc_script:
+        st.markdown("---")
+        st.header("🎙️ Production Workflow")
+        st.markdown("**Complete your documentary with voiceover, fact-checking, stock footage, and editing timeline**")
+
+        # Session state for production assets
+        if 'doc_voiceover_text' not in st.session_state:
+            st.session_state.doc_voiceover_text = None
+        if 'doc_fact_report' not in st.session_state:
+            st.session_state.doc_fact_report = None
+        if 'doc_stock_footage' not in st.session_state:
+            st.session_state.doc_stock_footage = None
+        if 'doc_xml_content' not in st.session_state:
+            st.session_state.doc_xml_content = None
+
+        prod_col1, prod_col2 = st.columns([1, 1])
+
+        # ================================
+        # LEFT COLUMN: VOICEOVER & FACT CHECK
+        # ================================
+        with prod_col1:
+            st.subheader("🎙️ Voiceover Preparation (Agent 14)")
+
+            # Mode selection
+            voiceover_mode = st.radio(
+                "Generation Mode",
+                options=["manual", "api"],
+                format_func=lambda x: "🖐️ Manual (Download for ElevenLabs)" if x == "manual" else "🤖 API (Auto - ElevenLabs)",
+                help="Manual: Download script text for manual upload to ElevenLabs web interface\nAPI: Automatic generation (requires ElevenLabs API key)"
+            )
+
+            # Prepare voiceover button
+            if st.button("📝 Prepare Voiceover Script", use_container_width=True):
+                with st.spinner("Agent 14 preparing voiceover..."):
+                    try:
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/documentary/prepare-voiceover",
+                            json={
+                                "script": st.session_state.doc_script,
+                                "mode": voiceover_mode
+                            },
+                            timeout=60
+                        )
+
+                        if response.status_code == 200:
+                            result = response.json()
+                            data = result.get('data', {})
+
+                            st.session_state.doc_voiceover_text = data.get('script_text')
+
+                            st.success(f"✅ {result.get('message')}")
+
+                            # Display stats
+                            col_stat1, col_stat2 = st.columns(2)
+                            with col_stat1:
+                                st.metric("Word Count", data.get('word_count', 0))
+                            with col_stat2:
+                                st.metric("Estimated Duration", f"{data.get('duration_estimate', 0)} min")
+                        else:
+                            st.error(f"❌ API Error: {response.text}")
+
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+
+            # Download voiceover script (manual mode)
+            if st.session_state.doc_voiceover_text and voiceover_mode == "manual":
+                st.markdown("---")
+                st.markdown("**📥 Manual Workflow:**")
+
+                # Instructions
+                with st.expander("📖 How to use ElevenLabs (Manual Mode)", expanded=False):
+                    st.markdown("""
+                    **Step-by-step:**
+                    1. Download the script text below
+                    2. Go to https://elevenlabs.io
+                    3. Select a professional narrator voice (recommended: "Josh" or "Bella")
+                    4. Paste the script into the text input
+                    5. Click "Generate" and download the MP3
+                    6. Upload the finished MP3 below
+
+                    **Recommended Settings:**
+                    - Stability: 50-60%
+                    - Clarity: 70-80%
+                    - Style Exaggeration: 0-10%
+                    """)
+
+                # Download button
+                st.download_button(
+                    label="📥 Download Script for ElevenLabs",
+                    data=st.session_state.doc_voiceover_text,
+                    file_name=f"voiceover_script_{st.session_state.doc_script.get('title', 'documentary').replace(' ', '_')}.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                    type="primary"
+                )
+
+                # Upload finished audio
+                st.markdown("**📤 Upload Finished Audio:**")
+                uploaded_audio = st.file_uploader(
+                    "Upload MP3/WAV from ElevenLabs",
+                    type=["mp3", "wav"],
+                    help="Upload the generated voiceover audio file"
+                )
+
+                if uploaded_audio:
+                    st.success(f"✅ Audio uploaded: {uploaded_audio.name}")
+                    st.audio(uploaded_audio)
+
+            st.markdown("---")
+
+            # Fact Check section (Agent 15)
+            st.subheader("🔍 Fact Checker (Agent 15)")
+
+            check_mode = st.selectbox(
+                "Check Mode",
+                options=["critical", "full"],
+                format_func=lambda x: "🎯 Critical (Numbers, Dates, Names)" if x == "critical" else "📋 Full (All Claims)",
+                help="Critical: Check only verifiable facts\nFull: Check all statements"
+            )
+
+            if st.button("🔬 Verify Facts", use_container_width=True):
+                with st.spinner("Agent 15 fact-checking with Gemini + Google Search..."):
+                    try:
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/documentary/fact-check",
+                            json={
+                                "script": st.session_state.doc_script,
+                                "check_mode": check_mode
+                            },
+                            timeout=120
+                        )
+
+                        if response.status_code == 200:
+                            result = response.json()
+                            data = result.get('data', {})
+
+                            st.session_state.doc_fact_report = data.get('fact_report')
+
+                            # Display result
+                            issues_count = data.get('issues_found', 0)
+
+                            if issues_count > 0:
+                                st.warning(f"⚠️ {issues_count} critical issues found!")
+                            else:
+                                st.success("✅ All facts verified!")
+
+                            # Stats
+                            col_stat1, col_stat2 = st.columns(2)
+                            with col_stat1:
+                                st.metric("Claims Checked", data.get('checks_performed', 0))
+                            with col_stat2:
+                                st.metric("Issues Found", issues_count, delta_color="inverse")
+                        else:
+                            st.error(f"❌ API Error: {response.text}")
+
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+
+            # Display fact report
+            if st.session_state.doc_fact_report:
+                st.markdown("---")
+                st.markdown("**📋 Fact-Check Report:**")
+
+                with st.expander("📄 View Full Report", expanded=True):
+                    st.markdown(st.session_state.doc_fact_report)
+
+                # Download report
+                st.download_button(
+                    label="💾 Download Fact-Check Report",
+                    data=st.session_state.doc_fact_report,
+                    file_name=f"fact_check_report_{st.session_state.doc_script.get('title', 'documentary').replace(' ', '_')}.md",
+                    mime="text/markdown",
+                    use_container_width=True
+                )
+
+        # ================================
+        # RIGHT COLUMN: STOCK FOOTAGE & XML
+        # ================================
+        with prod_col2:
+            st.subheader("🎥 Stock Footage Scout (Agent 16)")
+
+            media_type = st.radio(
+                "Media Type",
+                options=["videos", "photos"],
+                format_func=lambda x: "🎬 Stock Videos" if x == "videos" else "🖼️ Stock Photos",
+                horizontal=True
+            )
+
+            results_per_keyword = st.slider(
+                "Results per Keyword",
+                min_value=1,
+                max_value=5,
+                value=3,
+                help="Number of stock footage results to return per B-roll keyword"
+            )
+
+            if st.button("🔍 Find Stock Footage", use_container_width=True):
+                with st.spinner(f"Agent 16 searching Pexels for free {media_type}..."):
+                    try:
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/documentary/find-stock-footage",
+                            json={
+                                "script": st.session_state.doc_script,
+                                "media_type": media_type,
+                                "results_per_keyword": results_per_keyword
+                            },
+                            timeout=60
+                        )
+
+                        if response.status_code == 200:
+                            result = response.json()
+                            data = result.get('data', {})
+
+                            st.session_state.doc_stock_footage = data
+
+                            st.success(f"✅ Found {data.get('total_found', 0)} {media_type}")
+                        else:
+                            st.error(f"❌ API Error: {response.text}")
+
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+
+            # Display stock footage results
+            if st.session_state.doc_stock_footage:
+                st.markdown("---")
+                st.markdown(f"**🎬 Stock {media_type.title()}:**")
+
+                results = st.session_state.doc_stock_footage.get('results', [])
+
+                # Display in grid
+                for i in range(0, len(results), 2):
+                    cols = st.columns(2)
+                    for j, col in enumerate(cols):
+                        if i + j < len(results):
+                            item = results[i + j]
+                            with col:
+                                with st.container():
+                                    if item.get('thumbnail'):
+                                        st.image(item['thumbnail'], use_container_width=True)
+
+                                    st.caption(f"**{item.get('title', 'Untitled')}**")
+                                    st.caption(f"🔑 {item.get('search_keyword', '')}")
+
+                                    if media_type == "videos":
+                                        st.caption(f"⏱️ {item.get('duration', 0)}s")
+
+                                    st.caption(f"📷 {item.get('photographer', 'Unknown')}")
+
+                                    if item.get('download_url'):
+                                        st.link_button(
+                                            "⬇️ Download",
+                                            item['download_url'],
+                                            use_container_width=True
+                                        )
+
+                # Export URLs
+                st.markdown("---")
+                footage_urls = "\n".join([f"{item.get('title')}: {item.get('download_url')}" for item in results if item.get('download_url')])
+
+                st.download_button(
+                    label="💾 Export All URLs (Text)",
+                    data=footage_urls,
+                    file_name=f"stock_footage_urls_{media_type}.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+
+            st.markdown("---")
+
+            # XML Generation (Agent 17)
+            st.subheader("🎬 Timeline Generator (Agent 17)")
+            st.markdown("**Generate FCPXML for DaVinci Resolve / Premiere Pro**")
+
+            with st.expander("ℹ️ About FCPXML", expanded=False):
+                st.markdown("""
+                **FCPXML (Final Cut Pro XML)** is an interchange format supported by:
+                - DaVinci Resolve
+                - Adobe Premiere Pro
+                - Final Cut Pro
+                - Avid Media Composer
+
+                **What gets generated:**
+                - Track 1: Voiceover narration
+                - Track 2: Background music (30% volume)
+                - Track 3: B-roll videos
+                - Track 4: Still images
+                - Chapter markers from your script
+
+                **Note:** You'll need to add file paths to your actual assets.
+                """)
+
+            xml_format = st.selectbox(
+                "Timeline Format",
+                options=["fcpxml", "edl"],
+                format_func=lambda x: "FCPXML (DaVinci/Premiere/FCP)" if x == "fcpxml" else "EDL (Legacy Format)"
+            )
+
+            frame_rate = st.selectbox(
+                "Frame Rate",
+                options=["24", "25", "30", "60"],
+                format_func=lambda x: f"{x} fps",
+                index=0
+            )
+
+            # Asset paths (simplified for demo)
+            with st.expander("⚙️ Asset Configuration", expanded=False):
+                st.markdown("**Configure asset file paths:**")
+
+                voiceover_path = st.text_input("Voiceover Audio Path", value="/path/to/voiceover.mp3")
+                music_path = st.text_input("Background Music Path", value="/path/to/music.mp3")
+                voiceover_duration = st.number_input("Voiceover Duration (seconds)", value=900.0, step=10.0)
+                music_duration = st.number_input("Music Duration (seconds)", value=900.0, step=10.0)
+
+            if st.button("🎬 Generate Timeline XML", use_container_width=True, type="primary"):
+                with st.spinner(f"Agent 17 generating {xml_format.upper()}..."):
+                    try:
+                        # Build assets dict
+                        assets = {
+                            "voiceover": {
+                                "file_path": voiceover_path,
+                                "duration": voiceover_duration
+                            },
+                            "music": {
+                                "file_path": music_path,
+                                "duration": music_duration
+                            },
+                            "videos": [],  # User can add manually
+                            "images": []   # User can add manually
+                        }
+
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/documentary/generate-xml",
+                            json={
+                                "assets": assets,
+                                "script": st.session_state.doc_script,
+                                "frame_rate": frame_rate,
+                                "format": xml_format
+                            },
+                            timeout=60
+                        )
+
+                        if response.status_code == 200:
+                            result = response.json()
+                            data = result.get('data', {})
+
+                            xml_content = data.get('xml_content') or data.get('edl_content')
+                            st.session_state.doc_xml_content = xml_content
+
+                            st.success(f"✅ {result.get('message')}")
+
+                            # Stats
+                            col_stat1, col_stat2 = st.columns(2)
+                            with col_stat1:
+                                st.metric("Duration", f"{data.get('timeline_duration', 0):.1f}s")
+                            with col_stat2:
+                                st.metric("Tracks", data.get('tracks', 0))
+                        else:
+                            st.error(f"❌ API Error: {response.text}")
+
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+
+            # Download XML
+            if st.session_state.doc_xml_content:
+                st.markdown("---")
+
+                # Preview
+                with st.expander("📄 Preview XML", expanded=False):
+                    st.code(st.session_state.doc_xml_content[:1000] + "..." if len(st.session_state.doc_xml_content) > 1000 else st.session_state.doc_xml_content)
+
+                # Download
+                file_extension = "fcpxml" if xml_format == "fcpxml" else "edl"
+                st.download_button(
+                    label=f"💾 Download {xml_format.upper()} Timeline",
+                    data=st.session_state.doc_xml_content,
+                    file_name=f"documentary_timeline_{st.session_state.doc_script.get('title', 'untitled').replace(' ', '_')}.{file_extension}",
+                    mime="application/xml" if xml_format == "fcpxml" else "text/plain",
+                    use_container_width=True,
+                    type="primary"
+                )
+
 # ================================
 # FOOTER
 # ================================
