@@ -253,13 +253,14 @@ st.markdown("**AI-Powered Music Video Generation System**")
 st.markdown("---")
 
 # Create tabs
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🎵 Music Generation",
     "📤 Audio Upload",
     "🎨 Visuals & Style",
     "🎬 Production",
     "✂️ Post-Production",
-    "📽️ Doku-Studio"
+    "📽️ Doku-Studio",
+    "🔧 Debugger"
 ])
 
 # ================================
@@ -2288,6 +2289,281 @@ with tab6:
                     use_container_width=True,
                     type="primary"
                 )
+
+# ================================
+# TAB 7: DEBUGGER
+# ================================
+with tab7:
+    st.header("🔧 Agent Debugger & Test Workbench")
+    st.markdown("**Configure, test, and debug Gemini-based agents in real-time**")
+    st.markdown("---")
+
+    # Initialize session state for debugger
+    if 'debugger_chat_history' not in st.session_state:
+        st.session_state.debugger_chat_history = []
+    if 'debugger_logs' not in st.session_state:
+        st.session_state.debugger_logs = []
+    if 'debugger_config' not in st.session_state:
+        st.session_state.debugger_config = {
+            "model": "gemini-1.5-pro",
+            "system_instruction": "You are a helpful and precise AI assistant. You always think step-by-step before answering.",
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 64
+        }
+
+    # Layout: Config Panel (left) | Chat Area (center) | Logs (right)
+    config_col, chat_col, log_col = st.columns([1, 2, 1])
+
+    # ================================
+    # LEFT: CONFIGURATION PANEL
+    # ================================
+    with config_col:
+        st.subheader("⚙️ Agent Configuration")
+
+        # Agent Preset Selector
+        st.markdown("**Quick Presets:**")
+        preset_options = [
+            "Custom Agent",
+            "Agent 1 - Project Manager",
+            "Agent 2 - Lyrics Writer",
+            "Agent 3 - Music Style Analyzer",
+            "Agent 4 - Scene Planner",
+            "Agent 5 - Video Prompter (Veo)",
+            "Agent 6 - Video Prompter (Runway)"
+        ]
+
+        selected_preset = st.selectbox(
+            "Load Agent Preset",
+            options=preset_options,
+            key="debugger_preset"
+        )
+
+        # Load preset configuration when changed
+        if selected_preset != "Custom Agent":
+            if st.button("📥 Load Preset", use_container_width=True):
+                try:
+                    response = requests.get(f"{API_BASE_URL}/api/v1/debugger/presets")
+                    if response.status_code == 200:
+                        presets = response.json().get('data', {})
+                        if selected_preset in presets:
+                            st.session_state.debugger_config = presets[selected_preset]
+                            st.success(f"✅ Loaded: {selected_preset}")
+                            st.rerun()
+                except Exception as e:
+                    # Fallback to local presets
+                    presets = {
+                        "Agent 1 - Project Manager": {
+                            "system_instruction": "You are Agent 1: The Project Manager. Your role is to analyze music video concepts, generate genre variations, and manage viral trends. You think strategically and provide detailed creative direction.",
+                            "model": "gemini-1.5-pro",
+                            "temperature": 0.8,
+                            "top_p": 0.95,
+                            "top_k": 64
+                        },
+                        "Agent 2 - Lyrics Writer": {
+                            "system_instruction": "You are Agent 2: The Lyrics Writer. You create compelling, emotionally resonant lyrics that tell stories. Your lyrics are poetic, catchy, and align with the music video's theme.",
+                            "model": "gemini-1.5-pro",
+                            "temperature": 0.9,
+                            "top_p": 0.95,
+                            "top_k": 64
+                        }
+                    }
+                    if selected_preset in presets:
+                        st.session_state.debugger_config = presets[selected_preset]
+                        st.success(f"✅ Loaded: {selected_preset}")
+                        st.rerun()
+
+        st.markdown("---")
+
+        # Model Selection
+        st.markdown("**Model:**")
+        model_options = ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.5-flash-8b"]
+        st.session_state.debugger_config["model"] = st.selectbox(
+            "Select Model",
+            options=model_options,
+            index=model_options.index(st.session_state.debugger_config.get("model", "gemini-1.5-pro")),
+            key="debugger_model_select",
+            label_visibility="collapsed"
+        )
+
+        # System Instruction
+        st.markdown("**System Instruction:**")
+        st.session_state.debugger_config["system_instruction"] = st.text_area(
+            "System Instruction",
+            value=st.session_state.debugger_config.get("system_instruction", ""),
+            height=150,
+            key="debugger_system_instruction",
+            label_visibility="collapsed"
+        )
+
+        st.markdown("---")
+
+        # Generation Parameters
+        st.markdown("**Generation Parameters:**")
+
+        st.session_state.debugger_config["temperature"] = st.slider(
+            "Temperature",
+            min_value=0.0,
+            max_value=2.0,
+            value=st.session_state.debugger_config.get("temperature", 1.0),
+            step=0.1,
+            help="Controls randomness. Higher = more creative, Lower = more focused"
+        )
+
+        st.session_state.debugger_config["top_p"] = st.slider(
+            "Top P",
+            min_value=0.0,
+            max_value=1.0,
+            value=st.session_state.debugger_config.get("top_p", 0.95),
+            step=0.05,
+            help="Nucleus sampling. Controls diversity of word choice"
+        )
+
+        st.session_state.debugger_config["top_k"] = st.slider(
+            "Top K",
+            min_value=1,
+            max_value=100,
+            value=st.session_state.debugger_config.get("top_k", 64),
+            step=1,
+            help="Limits vocabulary to top K tokens"
+        )
+
+        st.markdown("---")
+
+        # Reset Chat Button
+        if st.button("🔄 Reset Chat", use_container_width=True):
+            st.session_state.debugger_chat_history = []
+            st.session_state.debugger_logs = []
+            st.success("✅ Chat reset")
+            st.rerun()
+
+    # ================================
+    # CENTER: CHAT AREA
+    # ================================
+    with chat_col:
+        st.subheader("💬 Test Chat")
+
+        # Display chat history
+        chat_container = st.container()
+        with chat_container:
+            for msg in st.session_state.debugger_chat_history:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                is_error = msg.get("is_error", False)
+
+                if role == "user":
+                    st.markdown(f"**👤 You:**")
+                    st.markdown(f"> {content}")
+                elif role == "assistant":
+                    st.markdown(f"**🤖 Assistant:**")
+                    if is_error:
+                        st.error(content)
+                    else:
+                        st.markdown(content)
+
+        st.markdown("---")
+
+        # Input area
+        with st.form(key="debugger_chat_form", clear_on_submit=True):
+            user_input = st.text_area(
+                "Your message",
+                placeholder="Type your test message here...",
+                height=100,
+                key="debugger_input"
+            )
+
+            col_send, col_clear = st.columns([3, 1])
+            with col_send:
+                send_button = st.form_submit_button("🚀 Send", use_container_width=True, type="primary")
+            with col_clear:
+                if st.form_submit_button("🗑️ Clear", use_container_width=True):
+                    st.session_state.debugger_chat_history = []
+                    st.session_state.debugger_logs = []
+                    st.rerun()
+
+            if send_button and user_input:
+                # Add user message to history
+                st.session_state.debugger_chat_history.append({
+                    "role": "user",
+                    "content": user_input
+                })
+
+                # Send to backend
+                with st.spinner("🤖 Generating response..."):
+                    try:
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/debugger/chat",
+                            json={
+                                "message": user_input,
+                                "config": st.session_state.debugger_config,
+                                "chat_history": st.session_state.debugger_chat_history[:-1]  # Exclude current message
+                            },
+                            timeout=30
+                        )
+
+                        if response.status_code == 200:
+                            data = response.json().get('data', {})
+
+                            # Add assistant response to history
+                            st.session_state.debugger_chat_history.append({
+                                "role": "assistant",
+                                "content": data.get('response_text', 'No response'),
+                                "is_error": not data.get('success', False)
+                            })
+
+                            # Add logs
+                            logs = data.get('logs', [])
+                            st.session_state.debugger_logs.extend(logs)
+
+                            st.rerun()
+                        else:
+                            st.error(f"❌ API Error: {response.text}")
+
+                    except Exception as e:
+                        st.session_state.debugger_chat_history.append({
+                            "role": "assistant",
+                            "content": f"❌ Connection Error: {str(e)}",
+                            "is_error": True
+                        })
+                        st.rerun()
+
+    # ================================
+    # RIGHT: DEBUG LOGS
+    # ================================
+    with log_col:
+        st.subheader("📋 Debug Logs")
+
+        # Clear logs button
+        if st.button("🗑️ Clear Logs", use_container_width=True):
+            st.session_state.debugger_logs = []
+            st.rerun()
+
+        st.markdown("---")
+
+        # Display logs
+        if len(st.session_state.debugger_logs) == 0:
+            st.info("No logs yet. Send a message to see debug data.")
+        else:
+            for idx, log in enumerate(reversed(st.session_state.debugger_logs)):
+                log_type = log.get("type", "unknown")
+                timestamp = log.get("timestamp", "")
+                data = log.get("data", {})
+
+                # Color-code by type
+                if log_type == "request":
+                    st.markdown(f"**🔵 REQUEST** `{timestamp}`")
+                    with st.expander("View Request Data", expanded=False):
+                        st.json(data)
+                elif log_type == "response":
+                    st.markdown(f"**🟢 RESPONSE** `{timestamp}`")
+                    with st.expander("View Response Data", expanded=False):
+                        st.json(data)
+                elif log_type == "error":
+                    st.markdown(f"**🔴 ERROR** `{timestamp}`")
+                    with st.expander("View Error Data", expanded=True):
+                        st.json(data)
+
+                st.markdown("---")
 
 # ================================
 # FOOTER

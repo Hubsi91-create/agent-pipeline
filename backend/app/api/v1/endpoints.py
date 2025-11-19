@@ -1513,3 +1513,81 @@ async def generate_timeline_xml(request: Dict[str, Any]):
     except Exception as e:
         logger.error(f"XML generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Debugger ====================
+
+@router.post("/debugger/chat", response_model=APIResponse)
+async def debugger_chat(request: Dict[str, Any]):
+    """
+    Debugger chat endpoint - send messages to Gemini for testing
+
+    Request body:
+    - message: str - User message
+    - config: dict - Agent configuration (model, temperature, system_instruction, etc.)
+    - chat_history: list - Previous messages (optional)
+    """
+    try:
+        from app.services.debugger_service import debugger_service
+
+        message = request.get("message", "")
+        config = request.get("config", {})
+        chat_history = request.get("chat_history", [])
+
+        if not message:
+            raise HTTPException(status_code=400, detail="Message is required")
+
+        # Send message to debugger service
+        result = await debugger_service.send_message(
+            message=message,
+            config=config,
+            chat_history=chat_history
+        )
+
+        return APIResponse(
+            success=result.get("success", False),
+            message="Message processed",
+            data=result
+        )
+
+    except Exception as e:
+        logger.error(f"Debugger chat failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/debugger/presets", response_model=APIResponse)
+async def get_debugger_presets():
+    """Get agent preset configurations for the debugger"""
+    try:
+        from app.services.debugger_service import debugger_service
+
+        presets = debugger_service.get_agent_presets()
+
+        return APIResponse(
+            success=True,
+            message="Presets retrieved",
+            data=presets
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get debugger presets: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/debugger/models", response_model=APIResponse)
+async def get_available_models():
+    """Get list of available Gemini models"""
+    try:
+        from app.services.debugger_service import debugger_service
+
+        models = debugger_service.get_available_models()
+
+        return APIResponse(
+            success=True,
+            message="Models retrieved",
+            data={"models": models}
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get available models: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
