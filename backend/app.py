@@ -885,12 +885,35 @@ with tab7:
                         timeout=30
                     )
                     if r.status_code == 200:
-                        resp = r.json().get('data', {}).get('response_text')
+                        data = r.json().get('data', {})
+                        resp = data.get('response_text')
                         st.session_state.debugger_chat_history.append({"role": "assistant", "content": resp})
+
+                        # Store logs and raw response for display
+                        st.session_state.debugger_logs = data.get('logs', [])
+                        st.session_state.debugger_raw_response = data.get('raw_response', {})
                         st.rerun()
                 except:
                     st.error("Debug Error")
-                    
+
+        # Display debugger internals
+        if st.session_state.debugger_logs:
+            with st.expander("🛠️ Debugger Internals (Logs & Raw Data)", expanded=True):
+                tab_logs, tab_raw = st.tabs(["System Logs", "Raw AI Response"])
+
+                with tab_logs:
+                    logs = st.session_state.debugger_logs
+                    if logs:
+                        for log in logs:
+                            st.caption(f"{log.get('timestamp', 'N/A')} - {log.get('type', 'LOG')}")
+                            st.json(log.get('data', {}))
+                    else:
+                        st.info("No logs available")
+
+                with tab_raw:
+                    raw_text = st.session_state.debugger_raw_response.get('text', 'No raw text')
+                    st.code(raw_text, language='json')
+
     with c2:
         st.markdown("#### CONFIG")
         st.session_state.debugger_config["temperature"] = st.slider("Temp", 0.0, 2.0, 1.0)
