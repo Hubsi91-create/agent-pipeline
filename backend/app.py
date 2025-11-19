@@ -495,25 +495,17 @@ with tab1:
             for idx, prompt in enumerate(st.session_state.generated_prompts, 1):
                 with st.expander(f"🎵 Prompt {idx}: {prompt['genre']}", expanded=idx==1):
                     st.markdown("**[LYRICS]**")
-                    st.text_area(
-                        "Lyrics",
-                        value=prompt['lyrics'],
-                        height=150,
-                        key=f"lyrics_{idx}",
-                        label_visibility="collapsed"
+                    st.markdown("*Click the copy icon in the top-right corner to copy to clipboard*")
+                    st.code(
+                        prompt['lyrics'],
+                        language='text'
                     )
 
                     st.markdown("**[STYLE]**")
-                    st.text_area(
-                        "Style",
-                        value=prompt['style'],
-                        height=60,
-                        key=f"style_{idx}",
-                        label_visibility="collapsed"
+                    st.code(
+                        prompt['style'],
+                        language='text'
                     )
-
-                    if st.button(f"📋 Copy Prompt {idx}", key=f"copy_{idx}"):
-                        st.success(f"✅ Prompt {idx} copied to clipboard!")
 
             # Export all button
             st.markdown("---")
@@ -1229,21 +1221,11 @@ with tab4:
 
                 # Veo prompt
                 st.markdown("**🎥 Google Veo (Narrative)**")
-                veo_col1, veo_col2 = st.columns([5, 1])
-
-                with veo_col1:
-                    st.text_area(
-                        f"Veo Prompt {i+1}",
-                        value=veo.get('prompt', ''),
-                        height=100,
-                        key=f"veo_prompt_{i}",
-                        label_visibility="collapsed"
-                    )
-
-                with veo_col2:
-                    if st.button("📋", key=f"copy_veo_{i}", help="Copy to clipboard"):
-                        st.code(veo.get('prompt', ''), language=None)
-                        st.success("✓")
+                st.markdown("*Click the copy icon in the top-right corner to copy to clipboard*")
+                st.code(
+                    veo.get('prompt', ''),
+                    language='text'
+                )
 
                 # Show status if validated
                 if veo.get('status'):
@@ -1291,21 +1273,11 @@ with tab4:
 
                 # Runway prompt
                 st.markdown("**🚀 Runway Gen-4 (Modular)**")
-                runway_col1, runway_col2 = st.columns([5, 1])
-
-                with runway_col1:
-                    st.text_area(
-                        f"Runway Prompt {i+1}",
-                        value=runway.get('prompt', ''),
-                        height=100,
-                        key=f"runway_prompt_{i}",
-                        label_visibility="collapsed"
-                    )
-
-                with runway_col2:
-                    if st.button("📋", key=f"copy_runway_{i}", help="Copy to clipboard"):
-                        st.code(runway.get('prompt', ''), language=None)
-                        st.success("✓")
+                st.markdown("*Click the copy icon in the top-right corner to copy to clipboard*")
+                st.code(
+                    runway.get('prompt', ''),
+                    language='text'
+                )
 
                 # Show status if validated
                 if runway.get('status'):
