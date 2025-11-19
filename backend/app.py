@@ -886,33 +886,34 @@ with tab7:
                     )
                     if r.status_code == 200:
                         data = r.json().get('data', {})
-                        resp = data.get('response_text')
-                        st.session_state.debugger_chat_history.append({"role": "assistant", "content": resp})
-
-                        # Store logs and raw response for display
-                        st.session_state.debugger_logs = data.get('logs', [])
-                        st.session_state.debugger_raw_response = data.get('raw_response', {})
+                        resp_text = data.get('response_text')
+                        st.session_state.debugger_chat_history.append({"role": "assistant", "content": resp_text})
+                        
+                        # NEU: Speichere die Debug-Daten für die Anzeige
+                        st.session_state.last_debug_info = data
                         st.rerun()
                 except:
                     st.error("Debug Error")
 
-        # Display debugger internals
-        if st.session_state.debugger_logs:
-            with st.expander("🛠️ Debugger Internals (Logs & Raw Data)", expanded=True):
-                tab_logs, tab_raw = st.tabs(["System Logs", "Raw AI Response"])
-
+        # Anzeige der "Eingeweide"
+        if 'last_debug_info' in st.session_state and st.session_state.last_debug_info:
+            debug_data = st.session_state.last_debug_info
+            
+            st.markdown("---")
+            st.subheader("💀 System Internals (Letzter Request)")
+            
+            with st.expander("📄 Raw AI Response & Logs", expanded=True):
+                tab_logs, tab_raw = st.tabs(["System Logs", "Raw Model Output"])
+                
                 with tab_logs:
-                    logs = st.session_state.debugger_logs
-                    if logs:
-                        for log in logs:
-                            st.caption(f"{log.get('timestamp', 'N/A')} - {log.get('type', 'LOG')}")
-                            st.json(log.get('data', {}))
-                    else:
-                        st.info("No logs available")
-
+                    st.caption("Was der Server protokolliert hat:")
+                    st.json(debug_data.get('logs', "No logs available"))
+                
                 with tab_raw:
-                    raw_text = st.session_state.debugger_raw_response.get('text', 'No raw text')
-                    st.code(raw_text, language='json')
+                    st.caption("Was Gemini wirklich gesagt hat:")
+                    # Zeige Text oder JSON Dump
+                    raw_content = debug_data.get('raw_response', {})
+                    st.code(json.dumps(raw_content, indent=2), language='json')
 
     with c2:
         st.markdown("#### CONFIG")
