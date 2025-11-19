@@ -160,39 +160,53 @@ def extract_json(text: str):
     Raises:
         ValueError: If no valid JSON could be extracted
     """
-    # Versuch 1: Reines JSON
+    if not text or not text.strip():
+        raise ValueError("Empty or whitespace-only text provided")
+
+    # Strategy 1: Pure JSON (fastest path)
     try:
         return json.loads(text)
-    except:
-        pass
+    except json.JSONDecodeError as e:
+        pass  # Continue to next strategy
 
-    # Versuch 2: Markdown Code Blocks ```json ... ```
-    match = re.search(r'```(?:json)?(.*?)```', text, re.DOTALL)
+    # Strategy 2: Markdown Code Blocks ```json ... ``` or ``` ... ```
+    match = re.search(r'```(?:json)?\s*(.*?)\s*```', text, re.DOTALL)
     if match:
         try:
             return json.loads(match.group(1).strip())
-        except:
+        except json.JSONDecodeError:
             pass
 
-    # Versuch 3: Suche nach der ersten '[' und der letzten ']' (für Listen)
+    # Strategy 3: Find JSON array [ ... ] (for lists)
     try:
         start = text.find('[')
         end = text.rfind(']') + 1
         if start != -1 and end > start:
-            return json.loads(text[start:end])
-    except:
+            json_str = text[start:end]
+            return json.loads(json_str)
+    except json.JSONDecodeError:
         pass
 
-    # Versuch 4: Suche nach der ersten '{' und der letzten '}' (für Objekte)
+    # Strategy 4: Find JSON object { ... } (for objects)
     try:
         start = text.find('{')
         end = text.rfind('}') + 1
         if start != -1 and end > start:
-            return json.loads(text[start:end])
-    except:
+            json_str = text[start:end]
+            return json.loads(json_str)
+    except json.JSONDecodeError:
         pass
 
-    raise ValueError("No valid JSON found in AI response")
+    # Strategy 5: Try to clean common AI response patterns
+    # Remove common prefixes like "Here is the JSON:", "```json", etc.
+    cleaned = re.sub(r'^.*?(\[|\{)', r'\1', text, flags=re.DOTALL)
+    cleaned = re.sub(r'(\]|\}).*?$', r'\1', cleaned, flags=re.DOTALL)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    raise ValueError(f"No valid JSON found in AI response. Text preview: {text[:200]}")
 
 
 class Agent1ProjectManager:
@@ -510,10 +524,8 @@ Respond with pure JSON only:"""
 
     async def generate_genre_variations(self, super_genre: str, num_variations: int = 20) -> List[Dict[str, str]]:
         """
-        Generate music genre variations for a given super genre
-        HYBRID STRATEGY:
-        1. Check static database first (instant, curated results)
-        2. Fall back to AI generation if genre not found
+        Generate music genre variations for a given super genre using AI
+        ALWAYS uses Gemini AI for fresh, creative variations
 
         Args:
             super_genre: Main genre (e.g., "Electronic", "HipHop")
@@ -522,27 +534,7 @@ Respond with pure JSON only:"""
         Returns:
             List of genre variations with descriptions
         """
-        logger.info(f"🎵 Generating {num_variations} variations for: {super_genre}")
-
-        # STEP 1: Check static database first (case-insensitive)
-        # Normalize genre name for matching
-        genre_normalized = super_genre.strip()
-
-        # Try exact match (case-insensitive)
-        for static_genre, subgenres in STATIC_SUBGENRES.items():
-            if static_genre.lower() == genre_normalized.lower():
-                logger.info(f"✅ Found {len(subgenres)} curated subgenres in static database")
-
-                # Shuffle for variety on each request
-                shuffled = subgenres.copy()
-                random.shuffle(shuffled)
-
-                result = shuffled[:num_variations]
-                logger.info(f"📦 Returning {len(result)} static subgenres (no AI call needed)")
-                return result
-
-        # STEP 2: Genre not found in static DB - use AI generation
-        logger.info(f"⚠️ '{super_genre}' not in static database - calling AI for generation")
+        logger.info(f"🎵 Generating {num_variations} AI variations for: {super_genre}")
 
         prompt = f"""You are a music trend expert and genre specialist with deep knowledge of subgenres.
 
@@ -555,9 +547,9 @@ REQUIREMENTS:
 4. Mix classic subgenres with modern fusion styles
 5. Consider current TikTok, YouTube, and Spotify trends
 
-IMPORTANT: Respond ONLY with a JSON array. No extra text, no markdown, just pure JSON.
+CRITICAL: Return a raw JSON array. Do NOT wrap in markdown code blocks. Do NOT add any text before or after the JSON.
 
-FORMAT:
+FORMAT (exactly like this):
 [
   {{"subgenre": "Liquid Drum & Bass", "description": "Smooth, melodic DnB with soulful vocals and atmospheric pads"}},
   {{"subgenre": "Neurofunk", "description": "Dark, technical DnB with complex bass design and sci-fi elements"}},
@@ -566,7 +558,7 @@ FORMAT:
 
 Generate exactly {num_variations} variations for: {super_genre}
 
-Respond with JSON array only."""
+Return ONLY the JSON array, nothing else."""
 
         try:
             # Get AI response with JSON mode enabled
@@ -578,7 +570,6 @@ Respond with JSON array only."""
             )
 
             logger.info(f"📥 Received AI response ({len(ai_response)} chars)")
-            print(f"DEBUG RAW RESPONSE: {ai_response}")
 
             # Parse JSON using robust extractor with AI Cleaner fallback
             variations = None
@@ -590,16 +581,19 @@ Respond with JSON array only."""
                 logger.info("✅ Local JSON parsing successful")
             except Exception as local_parse_error:
                 logger.warning(f"⚠️ Local JSON parsing failed: {local_parse_error}")
+                logger.error(f"📄 RAW AI RESPONSE:\n{ai_response[:1000]}")  # Log first 1000 chars
                 parsing_error = local_parse_error
 
                 # STEP 2: Try AI JSON Cleaner (Refinement Pattern)
                 try:
                     logger.info("🔄 Attempting AI JSON Cleaner (Gemini Flash)...")
                     cleaned_response = await self._clean_json_with_ai(ai_response)
+                    logger.info(f"🧹 Cleaned response ({len(cleaned_response)} chars)")
                     variations = extract_json(cleaned_response)
                     logger.info("✅ AI Cleaner successfully repaired JSON")
                 except Exception as cleaner_error:
                     logger.error(f"❌ AI Cleaner also failed: {cleaner_error}")
+                    logger.error(f"📄 CLEANED RESPONSE:\n{cleaned_response[:500] if 'cleaned_response' in locals() else 'N/A'}")
                     # Re-raise original error for fallback
                     raise parsing_error
 
@@ -626,11 +620,12 @@ Respond with JSON array only."""
             return valid_variations[:num_variations]
 
         except Exception as e:
-            print(f"DEBUG ERROR: {e}")
-            logger.error(f"❌ AI generation failed: {e}")
-            logger.warning(f"⚠️ Falling back to generic variations for {super_genre}")
+            logger.error(f"❌ AI generation completely failed: {e}")
+            logger.error(f"❌ Exception type: {type(e).__name__}")
+            logger.error(f"❌ Full traceback will show in logs")
+            logger.warning(f"⚠️ USING GENERIC FALLBACK for {super_genre} - This should not happen!")
 
-            # Fallback ONLY when AI completely fails
+            # Fallback ONLY when AI completely fails (should be rare with improved parsing)
             fallback_variations = []
             for i in range(num_variations):
                 fallback_variations.append({
@@ -638,6 +633,7 @@ Respond with JSON array only."""
                     "description": f"Variation {i+1} of {super_genre} with unique characteristics"
                 })
 
+            logger.error(f"⚠️ Returning {len(fallback_variations)} generic fallback variations")
             return fallback_variations
 
     async def _save_to_sheets(self, project: Project) -> bool:
