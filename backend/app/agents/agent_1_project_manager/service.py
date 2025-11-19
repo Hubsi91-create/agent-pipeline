@@ -223,14 +223,18 @@ Generate exactly 20 trends in JSON format."""
             # Get AI response with Google Search Grounding for real-time data
             ai_response = await gemini_service.generate_text(prompt, use_search=True)
 
-            # Parse JSON response
-            json_str = ai_response.strip()
-            if json_str.startswith("```json"):
-                json_str = json_str.split("```json")[1].split("```")[0].strip()
-            elif json_str.startswith("```"):
-                json_str = json_str.split("```")[1].split("```")[0].strip()
+            # Parse JSON response with robust cleaning
+            import re
 
-            trends = json.loads(json_str)
+            # 1. Find JSON array with regex (everything between [ and ])
+            json_match = re.search(r'\[.*\]', ai_response, re.DOTALL)
+
+            if json_match:
+                clean_json = json_match.group()
+                trends = json.loads(clean_json)
+            else:
+                # If regex fails, try raw text (in case it's pure JSON)
+                trends = json.loads(ai_response)
 
             # Ensure we have exactly 20 trends
             if len(trends) < 20:
@@ -318,22 +322,46 @@ Generate {num_variations} variations for: {super_genre}"""
             # Get AI response
             ai_response = await gemini_service.generate_text(prompt)
 
-            # Parse JSON response
-            import json
-            # Extract JSON from response (remove markdown code blocks if present)
-            json_str = ai_response.strip()
-            if json_str.startswith("```json"):
-                json_str = json_str.split("```json")[1].split("```")[0].strip()
-            elif json_str.startswith("```"):
-                json_str = json_str.split("```")[1].split("```")[0].strip()
+            # Parse JSON response with robust cleaning
+            import re
 
-            variations = json.loads(json_str)
+            # 1. Find JSON array with regex (everything between [ and ])
+            json_match = re.search(r'\[.*\]', ai_response, re.DOTALL)
 
-            logger.info(f"Generated {len(variations)} variations successfully")
-            return variations[:num_variations]  # Ensure we return exactly num_variations
+            if json_match:
+                clean_json = json_match.group()
+                try:
+                    variations = json.loads(clean_json)
+                    # Validation: Check if it's actually a list
+                    if isinstance(variations, list) and len(variations) > 0:
+                        logger.info(f"✅ Successfully parsed {len(variations)} variations from AI")
+                        return variations[:num_variations]
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON Decode Error on cleaned string: {clean_json[:100]}... | Error: {e}")
+
+            # If regex fails, try raw text (in case it's pure JSON)
+            try:
+                variations = json.loads(ai_response)
+                if isinstance(variations, list) and len(variations) > 0:
+                    logger.info(f"✅ Successfully parsed {len(variations)} variations from raw response")
+                    return variations[:num_variations]
+            except:
+                pass
+
+            logger.warning("⚠️ Could not parse AI response, using fallback.")
+
+            # Fallback: Return generic variations
+            fallback_variations = []
+            for i in range(num_variations):
+                fallback_variations.append({
+                    "subgenre": f"{super_genre} Style {i+1}",
+                    "description": f"Variation {i+1} of {super_genre} with unique characteristics"
+                })
+
+            return fallback_variations
 
         except Exception as e:
-            logger.error(f"Error generating variations: {e}")
+            logger.error(f"❌ Error generating variations: {e}")
 
             # Fallback: Return generic variations
             fallback_variations = []
