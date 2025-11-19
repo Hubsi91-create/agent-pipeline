@@ -1,0 +1,5288 @@
+
+
+# DATEI: backend/app/agents/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_1_project_manager/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_1_project_manager/service.py --------------------
+"""
+Agent 1: Project Manager
+Creates and manages video production projects
+Also provides trend detection and genre variation generation
+"""
+
+from typing import Optional, List, Dict
+from app.models.data_models import Project, ProjectCreate, ProjectStatus
+from app.infrastructure.database.google_sheet_service import (
+    google_sheet_service,
+    SHEET_A1_PROJECTS,
+    SHEET_A1_TREND_DATABASE
+)
+from app.infrastructure.external_services.gemini_service import gemini_service
+from app.utils.logger import setup_logger
+import random
+import json
+from datetime import datetime
+
+logger = setup_logger("Agent1_ProjectManager")
+
+
+class Agent1ProjectManager:
+    """Singleton service for project management"""
+
+    _instance: Optional['Agent1ProjectManager'] = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def create_project(self, project_data: ProjectCreate) -> Project:
+        """
+        Create a new music video project
+
+        Args:
+            project_data: Project creation data
+
+        Returns:
+            Created project
+        """
+        logger.info(f"Creating new project: {project_data.name}")
+
+        # Create project
+        project = Project(
+            name=project_data.name,
+            artist=project_data.artist,
+            song_title=project_data.song_title,
+            status=ProjectStatus(status="INIT", progress_percentage=0.0)
+        )
+
+        # Save to Google Sheets
+        await self._save_to_sheets(project)
+
+        logger.info(f"Project created: {project.id}")
+        return project
+
+    async def get_project(self, project_id: str) -> Optional[Project]:
+        """Get a project by ID"""
+        record = await google_sheet_service.find_record(
+            SHEET_A1_PROJECTS,
+            "id",
+            project_id
+        )
+
+        if record:
+            return Project(**record)
+        return None
+
+    async def update_project_status(
+        self,
+        project_id: str,
+        status: str,
+        current_agent: Optional[str] = None,
+        progress: Optional[float] = None
+    ) -> bool:
+        """Update project status"""
+        updates = {"status": status}
+        if current_agent:
+            updates["current_agent"] = current_agent
+        if progress is not None:
+            updates["progress_percentage"] = progress
+
+        return await google_sheet_service.update_record(
+            SHEET_A1_PROJECTS,
+            "id",
+            project_id,
+            updates
+        )
+
+    async def get_current_viral_trends(self) -> List[Dict[str, str]]:
+        """
+        Get current viral music trends from YouTube, TikTok, Spotify
+        Reads from A1_Trend_Database if available, otherwise uses fallback data
+
+        Returns:
+            List of 20 trending subgenres with descriptions
+        """
+        logger.info("Fetching current viral music trends")
+
+        # Try to read from database first
+        try:
+            records = await google_sheet_service.get_all_records(SHEET_A1_TREND_DATABASE)
+
+            if records and len(records) > 0:
+                logger.info(f"Loaded {len(records)} trends from database")
+                viral_trends = []
+
+                for record in records:
+                    viral_trends.append({
+                        "genre": record.get("genre", "Unknown"),
+                        "platform": record.get("platform", "Mixed"),
+                        "trend_score": record.get("trend_score", "🔥"),
+                        "description": record.get("description", "")
+                    })
+
+                # Shuffle for variety on each load
+                shuffled = viral_trends.copy()
+                random.shuffle(shuffled)
+
+                return shuffled[:20]  # Return max 20
+
+        except Exception as e:
+            logger.warning(f"Could not load trends from database: {e}")
+
+        # Fallback: Static trending genres (regularly updated based on platform analytics)
+        logger.info("Using fallback trend data")
+        viral_trends = [
+            {"genre": "Drift Phonk", "platform": "TikTok", "trend_score": "🔥🔥🔥"},
+            {"genre": "Sped-Up Nightcore", "platform": "YouTube", "trend_score": "🔥🔥🔥"},
+            {"genre": "Liquid DnB", "platform": "Spotify", "trend_score": "🔥🔥"},
+            {"genre": "Hypertechno", "platform": "TikTok", "trend_score": "🔥🔥🔥"},
+            {"genre": "Slowed + Reverb", "platform": "YouTube", "trend_score": "🔥🔥"},
+            {"genre": "Brazilian Phonk", "platform": "TikTok", "trend_score": "🔥🔥🔥"},
+            {"genre": "Dark Ambient Trap", "platform": "Spotify", "trend_score": "🔥🔥"},
+            {"genre": "Rage Beats", "platform": "TikTok", "trend_score": "🔥🔥"},
+            {"genre": "Pluggnb", "platform": "Spotify", "trend_score": "🔥🔥"},
+            {"genre": "Hyperpop 2.0", "platform": "TikTok", "trend_score": "🔥🔥🔥"},
+            {"genre": "Jersey Club", "platform": "TikTok", "trend_score": "🔥🔥"},
+            {"genre": "UK Drill", "platform": "YouTube", "trend_score": "🔥🔥"},
+            {"genre": "Afrobeats Fusion", "platform": "Spotify", "trend_score": "🔥🔥🔥"},
+            {"genre": "Melodic Dubstep", "platform": "YouTube", "trend_score": "🔥🔥"},
+            {"genre": "Dark Pop", "platform": "Spotify", "trend_score": "🔥🔥"},
+            {"genre": "Lofi House", "platform": "YouTube", "trend_score": "🔥🔥"},
+            {"genre": "Emo Rap Revival", "platform": "TikTok", "trend_score": "🔥🔥"},
+            {"genre": "Industrial Techno", "platform": "Spotify", "trend_score": "🔥🔥"},
+            {"genre": "Reggaeton Moderno", "platform": "TikTok", "trend_score": "🔥🔥🔥"},
+            {"genre": "Synthwave Trap", "platform": "YouTube", "trend_score": "🔥🔥"}
+        ]
+
+        # Shuffle for variety on each load
+        shuffled = viral_trends.copy()
+        random.shuffle(shuffled)
+
+        return shuffled
+
+    async def update_viral_trends(self) -> Dict[str, any]:
+        """
+        Update viral trends from live web search
+        Uses Gemini AI with grounding to fetch current trends from TikTok, Spotify, YouTube Shorts
+
+        Returns:
+            Dict with status, message, and count of updated trends
+        """
+        logger.info("Updating viral music trends from web search")
+
+        # Get current month for search query
+        current_month = datetime.now().strftime("%B")  # e.g., "December"
+        current_year = datetime.now().year
+
+        search_query = f"Latest viral music trends TikTok Spotify YouTube Shorts {current_month} {current_year} music video aesthetics"
+
+        prompt = f"""You are a music trend analyst with access to current internet data.
+
+SEARCH QUERY: "{search_query}"
+
+Your task: Identify the TOP 20 VIRAL MUSIC TRENDS right now (as of {current_month} {current_year}).
+
+REQUIREMENTS:
+1. Focus on ACTUAL viral genres/styles trending on TikTok, Spotify, and YouTube Shorts
+2. Include both audio trends AND visual aesthetics (e.g., "Dirty Aesthetic", "Slowed + Reverb")
+3. Prioritize genres that are CURRENTLY viral (not just established genres)
+4. Mix platforms: ~40% TikTok, ~30% YouTube Shorts, ~30% Spotify
+5. Each trend must be REAL and SPECIFIC (not generic)
+
+KEY TRENDS TO CONSIDER (if currently viral):
+- Phonk variants (Drift Phonk, Brazilian Phonk)
+- Darkwave
+- Hyperpop evolutions
+- Slowed + Reverb aesthetic
+- Sped-Up/Nightcore
+- Afrobeats Fusion
+- Aesthetic-driven genres (e.g., "Dirty Aesthetic")
+
+FORMAT (JSON Array):
+[
+  {{
+    "genre": "Drift Phonk",
+    "platform": "TikTok",
+    "trend_score": "🔥🔥🔥",
+    "description": "Aggressive bass-heavy phonk with Tokyo drift aesthetics"
+  }},
+  {{
+    "genre": "APT. Dance Challenge",
+    "platform": "TikTok",
+    "trend_score": "🔥🔥🔥",
+    "description": "BLACKPINK Rosé x Bruno Mars viral dance trend"
+  }},
+  ...
+]
+
+TREND SCORE GUIDE:
+- 🔥🔥🔥 = Extremely viral (trending now)
+- 🔥🔥 = Very popular
+- 🔥 = Growing trend
+
+Generate exactly 20 trends in JSON format."""
+
+        try:
+            # Get AI response with current trend knowledge
+            ai_response = await gemini_service.generate_text(prompt)
+
+            # Parse JSON response
+            json_str = ai_response.strip()
+            if json_str.startswith("```json"):
+                json_str = json_str.split("```json")[1].split("```")[0].strip()
+            elif json_str.startswith("```"):
+                json_str = json_str.split("```")[1].split("```")[0].strip()
+
+            trends = json.loads(json_str)
+
+            # Ensure we have exactly 20 trends
+            if len(trends) < 20:
+                logger.warning(f"Only {len(trends)} trends generated, expected 20")
+
+            # Save to Google Sheets
+            headers = ["genre", "platform", "trend_score", "description", "last_updated"]
+            data_rows = []
+
+            timestamp = datetime.now().isoformat()
+            for trend in trends[:20]:  # Limit to 20
+                data_rows.append([
+                    trend.get("genre", "Unknown"),
+                    trend.get("platform", "Mixed"),
+                    trend.get("trend_score", "🔥"),
+                    trend.get("description", ""),
+                    timestamp
+                ])
+
+            # Clear and replace trend database
+            success = await google_sheet_service.clear_and_replace(
+                SHEET_A1_TREND_DATABASE,
+                headers,
+                data_rows
+            )
+
+            if success:
+                logger.info(f"✅ Updated {len(data_rows)} viral trends in database")
+                return {
+                    "status": "success",
+                    "message": f"Trends updated from web (TikTok, Spotify, YouTube Shorts) - {current_month} {current_year}",
+                    "count": len(data_rows),
+                    "trends": trends[:20]
+                }
+            else:
+                logger.error("Failed to save trends to Google Sheets")
+                return {
+                    "status": "error",
+                    "message": "Failed to save trends to database",
+                    "count": 0
+                }
+
+        except Exception as e:
+            logger.error(f"Error updating viral trends: {e}")
+            return {
+                "status": "error",
+                "message": f"Failed to update trends: {str(e)}",
+                "count": 0
+            }
+
+    async def generate_genre_variations(self, super_genre: str, num_variations: int = 20) -> List[Dict[str, str]]:
+        """
+        Generate music genre variations for a given super genre
+
+        Args:
+            super_genre: Main genre (e.g., "Electronic", "HipHop")
+            num_variations: Number of variations to generate (default: 20)
+
+        Returns:
+            List of genre variations with descriptions
+        """
+        logger.info(f"Generating {num_variations} variations for super genre: {super_genre}")
+
+        prompt = f"""You are a music trend expert and genre specialist.
+
+TASK: Generate {num_variations} SPECIFIC subgenre variations for the super genre "{super_genre}".
+
+REQUIREMENTS:
+1. Each variation must be a REAL, specific subgenre (not generic)
+2. Include both established and emerging/viral subgenres
+3. Add a brief description (1 sentence, max 15 words)
+4. Mix classic subgenres with modern fusion styles
+5. Consider current TikTok, YouTube, and Spotify trends
+
+FORMAT (JSON):
+[
+  {{"subgenre": "Liquid Drum & Bass", "description": "Smooth, melodic DnB with soulful vocals and atmospheric pads"}},
+  {{"subgenre": "Neurofunk", "description": "Dark, technical DnB with complex bass design and sci-fi elements"}},
+  ...
+]
+
+Generate {num_variations} variations for: {super_genre}"""
+
+        try:
+            # Get AI response
+            ai_response = await gemini_service.generate_text(prompt)
+
+            # Parse JSON response
+            import json
+            # Extract JSON from response (remove markdown code blocks if present)
+            json_str = ai_response.strip()
+            if json_str.startswith("```json"):
+                json_str = json_str.split("```json")[1].split("```")[0].strip()
+            elif json_str.startswith("```"):
+                json_str = json_str.split("```")[1].split("```")[0].strip()
+
+            variations = json.loads(json_str)
+
+            logger.info(f"Generated {len(variations)} variations successfully")
+            return variations[:num_variations]  # Ensure we return exactly num_variations
+
+        except Exception as e:
+            logger.error(f"Error generating variations: {e}")
+
+            # Fallback: Return generic variations
+            fallback_variations = []
+            for i in range(num_variations):
+                fallback_variations.append({
+                    "subgenre": f"{super_genre} Style {i+1}",
+                    "description": f"Variation {i+1} of {super_genre} with unique characteristics"
+                })
+
+            return fallback_variations
+
+    async def _save_to_sheets(self, project: Project) -> bool:
+        """Save project to Google Sheets"""
+        data = [
+            project.id,
+            project.name,
+            project.artist,
+            project.song_title,
+            project.audio_file_path or "",
+            project.status.status,
+            project.status.current_agent or "",
+            project.status.progress_percentage,
+            project.created_at.isoformat(),
+            project.updated_at.isoformat()
+        ]
+
+        return await google_sheet_service.append_row(SHEET_A1_PROJECTS, data)
+
+
+# Singleton instance
+agent1_service = Agent1ProjectManager()
+
+
+# DATEI: backend/app/agents/agent_9_capcut/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_9_capcut/service.py --------------------
+"""
+Agent 9: CapCut Instructor - "The Editor's Assistant"
+Generates step-by-step editing guides for CapCut based on audio analysis
+"""
+
+from typing import Optional, Dict, Any, List
+from app.infrastructure.database.google_sheet_service import (
+    google_sheet_service,
+    SHEET_A9_CAPCUT_EFFECTS
+)
+from app.utils.logger import setup_logger
+
+logger = setup_logger("Agent9_CapCut")
+
+
+class Agent9CapCutInstructor:
+    """Singleton service for CapCut editing instructions"""
+
+    _instance: Optional['Agent9CapCutInstructor'] = None
+    _effects_cache: Optional[List[Dict[str, str]]] = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def generate_edit_guide(
+        self,
+        scenes: List[Dict[str, Any]],
+        audio_duration: float = None
+    ) -> str:
+        """
+        Generate Edit Decision List (EDL) for CapCut
+
+        Args:
+            scenes: List of scene dicts with timing, energy, type
+            audio_duration: Total audio duration (optional)
+
+        Returns:
+            Markdown-formatted editing guide
+        """
+        logger.info(f"Generating CapCut edit guide for {len(scenes)} scenes")
+
+        # Load effects database
+        effects = await self._load_effects()
+
+        # Build EDL markdown
+        guide_lines = []
+        guide_lines.append("# 🎬 CapCut Editing Guide\n")
+        guide_lines.append("**Step-by-step instructions for video editing**\n")
+        guide_lines.append("---\n")
+
+        # Timeline setup
+        guide_lines.append("## 📋 Timeline Setup\n")
+        guide_lines.append("1. **Import Audio**: Drag your master audio track to the timeline")
+        guide_lines.append("2. **Lock Audio Track**: Right-click audio → Lock track")
+        guide_lines.append("3. **Import Scene Videos**: Import all generated video clips")
+        if audio_duration:
+            guide_lines.append(f"4. **Total Duration**: {audio_duration:.2f}s\n")
+        else:
+            guide_lines.append("")
+
+        guide_lines.append("---\n")
+
+        # Scene-by-scene instructions
+        guide_lines.append("## 🎞️ Scene-by-Scene Editing\n")
+
+        for i, scene in enumerate(scenes):
+            scene_num = i + 1
+            start_time = scene.get('start', 0)
+            end_time = scene.get('end', 0)
+            duration = scene.get('duration', 0)
+            energy = scene.get('energy', 'medium').lower()
+            scene_type = scene.get('type', 'unknown').lower()
+
+            guide_lines.append(f"### Scene {scene_num}: {scene_type.title()} ({start_time:.2f}s - {end_time:.2f}s)\n")
+            guide_lines.append(f"**Duration**: {duration:.2f}s | **Energy**: {energy.upper()}\n")
+
+            # Get recommendations based on energy and type
+            recommendations = self._get_scene_recommendations(
+                energy=energy,
+                scene_type=scene_type,
+                effects=effects,
+                start_time=start_time
+            )
+
+            guide_lines.append("**Editing Instructions:**\n")
+            for rec in recommendations:
+                guide_lines.append(f"- {rec}")
+
+            guide_lines.append("")
+
+        guide_lines.append("---\n")
+
+        # Final touches
+        guide_lines.append("## ✨ Final Touches\n")
+        guide_lines.append("1. **Color Grading**: Apply consistent color preset across all scenes")
+        guide_lines.append("2. **Transitions**: Use cuts for high energy, fades for low energy")
+        guide_lines.append("3. **Audio Sync**: Verify all cuts are perfectly synced to beats")
+        guide_lines.append("4. **Export Settings**: 1080p, 30fps, MP4 format")
+        guide_lines.append("5. **Preview**: Watch full video before export\n")
+
+        markdown_guide = "\n".join(guide_lines)
+
+        logger.info("CapCut edit guide generated successfully")
+        return markdown_guide
+
+    def _get_scene_recommendations(
+        self,
+        energy: str,
+        scene_type: str,
+        effects: List[Dict[str, str]],
+        start_time: float
+    ) -> List[str]:
+        """
+        Get editing recommendations for a scene
+
+        Args:
+            energy: Energy level (low, medium, high)
+            scene_type: Scene type (intro, verse, chorus, drop, etc.)
+            effects: List of available effects
+            start_time: Scene start time
+
+        Returns:
+            List of recommendation strings
+        """
+        recommendations = []
+
+        # Timing recommendation
+        recommendations.append(f"**Position video clip at {start_time:.2f}s** on the timeline")
+
+        # Energy-based recommendations
+        if energy == 'low':
+            # Low energy scenes
+            recommendations.append("**Pacing**: Use slow, smooth transitions")
+            recommendations.append("**Camera**: Prefer static or slow-moving shots")
+
+            # Find atmospheric effects
+            atmospheric_effects = [
+                eff for eff in effects
+                if any(keyword in eff.get('name', '').lower()
+                       for keyword in ['glow', 'dreamy', 'soft', 'blur', 'vintage', 'retro'])
+            ]
+
+            if atmospheric_effects:
+                effect_names = [f"'{eff['name']}'" for eff in atmospheric_effects[:3]]
+                recommendations.append(f"**Effects**: Apply {' or '.join(effect_names)} for atmosphere")
+            else:
+                recommendations.append("**Effects**: Use 'Dreamy Glow' or 'Soft Blur' for atmosphere")
+
+        elif energy == 'high':
+            # High energy scenes
+            recommendations.append(f"**CUT HARD** on the beat at {start_time:.2f}s")
+            recommendations.append("**Pacing**: Use rapid cuts and dynamic transitions")
+            recommendations.append("**Camera**: Emphasize fast movement and action")
+
+            # Find energetic effects
+            energetic_effects = [
+                eff for eff in effects
+                if any(keyword in eff.get('name', '').lower()
+                       for keyword in ['shake', 'strobe', 'glitch', 'flash', 'zoom', 'shake'])
+            ]
+
+            if energetic_effects:
+                effect_names = [f"'{eff['name']}'" for eff in energetic_effects[:3]]
+                recommendations.append(f"**Effects**: Add {' + '.join(effect_names)} for impact")
+            else:
+                recommendations.append("**Effects**: Add 'Shake' + 'Strobe' or 'Glitch' for impact")
+
+        else:
+            # Medium energy
+            recommendations.append("**Pacing**: Balanced rhythm matching the music")
+            recommendations.append("**Camera**: Mix of static and moving shots")
+            recommendations.append("**Effects**: Use subtle transitions and light color adjustments")
+
+        # Scene type-specific recommendations
+        if 'intro' in scene_type:
+            recommendations.append("**Special Note**: Establish visual identity and mood")
+        elif 'drop' in scene_type or 'chorus' in scene_type:
+            recommendations.append("**Special Note**: This is a key moment - maximize visual impact!")
+        elif 'outro' in scene_type:
+            recommendations.append("**Special Note**: Wind down gracefully, consider fade to black")
+
+        return recommendations
+
+    async def _load_effects(self) -> List[Dict[str, str]]:
+        """
+        Load CapCut effects from database
+
+        Returns:
+            List of effect dicts with name, category, description
+        """
+        # Check cache
+        if self._effects_cache:
+            return self._effects_cache
+
+        try:
+            records = await google_sheet_service.get_all_records(SHEET_A9_CAPCUT_EFFECTS)
+
+            if records and len(records) > 0:
+                effects = []
+                for record in records:
+                    effects.append({
+                        "name": record.get("name", "Unknown Effect"),
+                        "category": record.get("category", "general"),
+                        "energy": record.get("energy", "medium"),
+                        "description": record.get("description", "")
+                    })
+
+                self._effects_cache = effects
+                logger.info(f"Loaded {len(effects)} CapCut effects from database")
+                return effects
+
+        except Exception as e:
+            logger.warning(f"Could not load effects from database: {e}")
+
+        # Fallback: Hardcoded effects library
+        fallback_effects = [
+            {
+                "name": "Dreamy Glow",
+                "category": "atmosphere",
+                "energy": "low",
+                "description": "Soft ethereal glow effect for dreamy scenes"
+            },
+            {
+                "name": "Retro Blue",
+                "category": "color",
+                "energy": "low",
+                "description": "Vintage film aesthetic with blue tint"
+            },
+            {
+                "name": "Soft Blur",
+                "category": "atmosphere",
+                "energy": "low",
+                "description": "Gentle background blur for depth"
+            },
+            {
+                "name": "Shake",
+                "category": "motion",
+                "energy": "high",
+                "description": "Camera shake effect for impact"
+            },
+            {
+                "name": "Strobe",
+                "category": "lighting",
+                "energy": "high",
+                "description": "Strobe light flash effect"
+            },
+            {
+                "name": "Glitch",
+                "category": "distortion",
+                "energy": "high",
+                "description": "Digital glitch distortion"
+            },
+            {
+                "name": "Flash Zoom",
+                "category": "motion",
+                "energy": "high",
+                "description": "Rapid zoom with flash"
+            },
+            {
+                "name": "Beat Sync",
+                "category": "rhythm",
+                "energy": "medium",
+                "description": "Automated beat-synced cuts"
+            },
+            {
+                "name": "Color Pop",
+                "category": "color",
+                "energy": "medium",
+                "description": "Selective color highlighting"
+            },
+            {
+                "name": "Light Leak",
+                "category": "atmosphere",
+                "energy": "low",
+                "description": "Film-style light leaks"
+            }
+        ]
+
+        logger.info(f"Using {len(fallback_effects)} fallback effects")
+        return fallback_effects
+
+
+# Singleton instance
+agent9_service = Agent9CapCutInstructor()
+
+
+# DATEI: backend/app/agents/agent_7_runway_prompter/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_7_runway_prompter/service.py --------------------
+"""
+Agent 7: Runway Prompter - "The Motion Specialist"
+Generates modular, comma-separated prompts optimized for Runway Gen-4 with Few-Shot Learning
+"""
+
+from typing import Optional, List, Dict, Any
+from app.infrastructure.external_services.gemini_service import gemini_service
+from app.infrastructure.database.google_sheet_service import (
+    google_sheet_service,
+    SHEET_A6_VIDEO_EXAMPLES
+)
+from app.utils.logger import setup_logger
+
+logger = setup_logger("Agent7_RunwayPrompter")
+
+
+class Agent7RunwayPrompter:
+    """Singleton service for Runway prompt generation with Few-Shot Learning"""
+
+    _instance: Optional['Agent7RunwayPrompter'] = None
+    _examples_cache: Optional[List[Dict[str, str]]] = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def generate_prompt(
+        self,
+        scene: Dict[str, Any],
+        style: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate Runway-optimized modular video prompt for a scene
+
+        Runway Prompt Style: Modular, comma-separated structure that clearly
+        defines subject, motion, camera, environment, and style in distinct segments.
+
+        Structure: [Subject Motion], [Camera Move], [Environment], [Style Suffix]
+
+        Args:
+            scene: Scene dict with id, start, end, type, energy, camera, lighting, description
+            style: Style dict with name, suffix, negative (optional)
+
+        Returns:
+            Dict with:
+            - prompt: Generated modular prompt (max 300 chars)
+            - negative: Negative prompt from style
+            - model: "runway"
+            - scene_id: Scene ID
+        """
+        logger.info(f"Generating Runway modular prompt for scene {scene.get('id', 'unknown')}")
+
+        try:
+            # Load few-shot examples
+            examples = await self._load_few_shot_examples(model="runway")
+
+            # Build few-shot prompt
+            few_shot_section = self._build_few_shot_section(examples)
+
+            # Build the generation prompt
+            scene_type = scene.get("type", "Scene")
+            energy = scene.get("energy", "Medium")
+            camera = scene.get("camera", "Static")
+            lighting = scene.get("lighting", "Natural")
+            description = scene.get("description", "Artist performs")
+
+            # Style suffix (if provided)
+            style_suffix = ""
+            negative_prompt = ""
+            if style:
+                style_suffix = style.get("suffix", "")
+                negative_prompt = style.get("negative", "")
+
+            generation_prompt = f"""You are a professional video prompter writing for Runway Gen-4.
+
+FEW-SHOT EXAMPLES (Study these modular patterns):
+{few_shot_section}
+
+Now generate a MODULAR PROMPT for:
+
+SCENE DETAILS:
+- Type: {scene_type}
+- Energy: {energy}
+- Camera: {camera}
+- Lighting: {lighting}
+- Description: {description}
+- Style: {style_suffix if style_suffix else "cinematic, professional"}
+
+REQUIREMENTS:
+1. Write as COMMA-SEPARATED MODULES (not narrative)
+2. Structure: [Subject Motion], [Camera Movement], [Environment/Lighting], [Style Suffix]
+3. Each module is a concise phrase
+4. Emphasize motion and dynamics (Runway excels at motion)
+5. Max 300 characters total
+6. No full sentences, just keyword-rich descriptive phrases
+
+Example format: "Artist dancing energetically, rapid whip pan camera, vibrant neon-lit urban environment, high contrast colorful gels, music video aesthetic"
+
+Generate ONLY the modular prompt, no explanation:"""
+
+            # Get AI response
+            ai_response = await gemini_service.generate_text(generation_prompt, temperature=0.7)
+
+            # Clean up response
+            prompt_text = ai_response.strip().replace('"', '').replace("'", "")
+
+            # Ensure max 300 chars for Runway
+            if len(prompt_text) > 300:
+                prompt_text = prompt_text[:297] + "..."
+
+            logger.info(f"Generated Runway prompt ({len(prompt_text)} chars)")
+
+            return {
+                "prompt": prompt_text,
+                "negative": negative_prompt,
+                "model": "runway",
+                "scene_id": scene.get("id"),
+                "duration": min(scene.get("duration", 8.0), 10.0)  # Runway Gen-4 supports up to 10s
+            }
+
+        except Exception as e:
+            logger.error(f"Runway prompt generation failed: {e}")
+            # Fallback
+            fallback = f"Artist performing, {camera.lower()} camera, {lighting.lower()} lighting, {style_suffix if style_suffix else 'cinematic quality'}"
+            return {
+                "prompt": fallback,
+                "negative": negative_prompt if style else "",
+                "model": "runway",
+                "scene_id": scene.get("id"),
+                "duration": min(scene.get("duration", 8.0), 10.0)
+            }
+
+    async def _load_few_shot_examples(self, model: str = "runway", limit: int = 3) -> List[Dict[str, str]]:
+        """
+        Load few-shot examples from A6_Video_Examples Google Sheet
+
+        Returns:
+            List of example dicts with 'prompt' and 'model' keys
+        """
+        # Check cache
+        if self._examples_cache:
+            runway_examples = [e for e in self._examples_cache if e.get("model") == "runway"]
+            return runway_examples[:limit]
+
+        try:
+            records = await google_sheet_service.get_all_records(SHEET_A6_VIDEO_EXAMPLES)
+
+            if records and len(records) > 0:
+                logger.info(f"Loaded {len(records)} few-shot examples from database")
+
+                examples = []
+                for record in records:
+                    examples.append({
+                        "model": record.get("model", "runway"),
+                        "prompt": record.get("prompt", ""),
+                        "category": record.get("category", "general")
+                    })
+
+                self._examples_cache = examples
+
+                # Filter for Runway examples
+                runway_examples = [e for e in examples if e.get("model") == "runway"]
+                return runway_examples[:limit]
+
+        except Exception as e:
+            logger.warning(f"Could not load examples from database: {e}")
+
+        # Fallback: Hardcoded examples
+        logger.info("Using fallback few-shot examples")
+        fallback_examples = [
+            {
+                "model": "runway",
+                "prompt": "Artist standing contemplatively, slow zoom in camera, dimly lit studio with soft blue ambient light, intimate atmosphere, shot on CineStill 800T film, cinematic bokeh",
+                "category": "low_energy"
+            },
+            {
+                "model": "runway",
+                "prompt": "Artist dancing energetically through streets, dynamic whip pan camera, vibrant neon-lit urban environment, strobe lighting effects, high contrast music video aesthetic, colorful gels",
+                "category": "high_energy"
+            },
+            {
+                "model": "runway",
+                "prompt": "Artist performing with controlled movement, smooth tracking shot camera, natural golden hour lighting, warm skin tones, balanced energy, professional production quality",
+                "category": "medium_energy"
+            }
+        ]
+
+        return fallback_examples[:limit]
+
+    def _build_few_shot_section(self, examples: List[Dict[str, str]]) -> str:
+        """Build few-shot examples section for the prompt"""
+        if not examples:
+            return "No examples available."
+
+        lines = []
+        for idx, example in enumerate(examples, 1):
+            lines.append(f"Example {idx}: \"{example.get('prompt', '')}\"")
+
+        return "\n".join(lines)
+
+    async def save_as_gold_standard(
+        self,
+        prompt: str,
+        scene_description: str,
+        energy: str = "medium"
+    ) -> Dict[str, Any]:
+        """
+        Save a generated prompt as a gold standard example (Feedback Loop)
+
+        This enables the system to learn from its own successes.
+        Good prompts are saved to A6_Video_Examples and become part
+        of the Few-Shot Learning knowledge base for future generations.
+
+        Args:
+            prompt: The generated Runway prompt to save
+            scene_description: Brief description of the scene
+            energy: Energy level (low, medium, high)
+
+        Returns:
+            Dict with success status and message
+        """
+        logger.info(f"Saving Runway prompt as gold standard: {prompt[:50]}...")
+
+        try:
+            from datetime import datetime
+
+            # Prepare data for A6_Video_Examples sheet
+            timestamp = datetime.now().isoformat()
+            data = [
+                "runway",  # model
+                prompt,  # prompt
+                energy,  # category/energy level
+                scene_description,  # description
+                timestamp,  # created_at
+                "auto-learned"  # source
+            ]
+
+            # Append to Google Sheets
+            success = await google_sheet_service.append_row(
+                SHEET_A6_VIDEO_EXAMPLES,
+                data
+            )
+
+            if success:
+                # Clear cache to force reload with new example
+                self._examples_cache = None
+
+                logger.info(f"✅ Runway prompt saved to gold standards")
+                return {
+                    "success": True,
+                    "message": "Prompt added to Few-Shot Learning database",
+                    "model": "runway"
+                }
+            else:
+                logger.error("Failed to save prompt to database")
+                return {
+                    "success": False,
+                    "message": "Failed to save to database"
+                }
+
+        except Exception as e:
+            logger.error(f"Error saving gold standard: {e}")
+            return {
+                "success": False,
+                "message": f"Error: {str(e)}"
+            }
+
+
+# Singleton instance
+agent7_service = Agent7RunwayPrompter()
+
+
+# DATEI: backend/app/agents/agent_2_qc/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_2_qc/service.py --------------------
+"""
+Agent 2: QC Agent
+Quality control for scenes, prompts, and styles
+Includes auto-learning feedback loop for Few-Shot Learning
+"""
+
+from typing import Optional
+from datetime import datetime
+from app.models.data_models import QCFeedback, QCRequest, SunoPromptResponse, SunoPromptExample
+from app.infrastructure.external_services.gemini_service import gemini_service
+from app.infrastructure.database.google_sheet_service import (
+    google_sheet_service,
+    SHEET_A2_QC_FEEDBACK,
+    SHEET_APPROVED_BEST_PRACTICES
+)
+from app.utils.logger import setup_logger
+
+logger = setup_logger("Agent2_QC")
+
+
+class Agent2QC:
+    """Singleton service for quality control"""
+
+    _instance: Optional['Agent2QC'] = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def review_content(self, qc_request: QCRequest) -> QCFeedback:
+        """
+        Review content and provide QC feedback
+
+        Args:
+            qc_request: QC review request
+
+        Returns:
+            QC feedback
+        """
+        logger.info(f"Reviewing {qc_request.target_type}: {qc_request.target_id}")
+
+        # Create prompt for Gemini
+        prompt = self._create_qc_prompt(qc_request)
+
+        # Get AI feedback
+        ai_response = await gemini_service.generate_text(prompt, temperature=0.3)
+
+        # Parse response and determine status
+        qc_status, feedback, suggestions = self._parse_qc_response(ai_response)
+
+        # Create feedback
+        qc_feedback = QCFeedback(
+            project_id=qc_request.project_id,
+            target_id=qc_request.target_id,
+            target_type=qc_request.target_type,
+            qc_status=qc_status,
+            feedback=feedback,
+            suggestions=suggestions
+        )
+
+        # Save to Google Sheets
+        await self._save_to_sheets(qc_feedback)
+
+        logger.info(f"QC Review complete: {qc_status}")
+        return qc_feedback
+
+    def _create_qc_prompt(self, qc_request: QCRequest) -> str:
+        """Create QC prompt for Gemini"""
+        return f"""
+You are a quality control agent for music video production.
+
+Review the following {qc_request.target_type}:
+
+{qc_request.content}
+
+Provide feedback in this format:
+STATUS: [APPROVED/NEEDS_REVISION/REJECTED]
+FEEDBACK: [Your detailed feedback]
+SUGGESTIONS: [Bullet points of specific improvements if needed]
+
+Be specific and actionable in your feedback.
+"""
+
+    def _parse_qc_response(self, response: str) -> tuple[str, str, list[str]]:
+        """Parse Gemini's QC response"""
+        lines = response.strip().split('\n')
+
+        status = "NEEDS_REVISION"  # Default
+        feedback = ""
+        suggestions = []
+
+        for line in lines:
+            if line.startswith("STATUS:"):
+                status_text = line.replace("STATUS:", "").strip()
+                if "APPROVED" in status_text.upper():
+                    status = "APPROVED"
+                elif "REJECTED" in status_text.upper():
+                    status = "REJECTED"
+            elif line.startswith("FEEDBACK:"):
+                feedback = line.replace("FEEDBACK:", "").strip()
+            elif line.startswith("-") or line.startswith("*"):
+                suggestions.append(line.lstrip("-* ").strip())
+
+        if not feedback:
+            feedback = response
+
+        return status, feedback, suggestions
+
+    async def _save_to_sheets(self, qc_feedback: QCFeedback) -> bool:
+        """Save QC feedback to Google Sheets"""
+        data = [
+            qc_feedback.id,
+            qc_feedback.project_id,
+            qc_feedback.target_id,
+            qc_feedback.target_type,
+            qc_feedback.qc_status,
+            qc_feedback.feedback,
+            "; ".join(qc_feedback.suggestions),
+            qc_feedback.iteration,
+            qc_feedback.created_at.isoformat()
+        ]
+
+        return await google_sheet_service.append_row(SHEET_A2_QC_FEEDBACK, data)
+
+    async def review_suno_prompt(
+        self,
+        suno_prompt: SunoPromptResponse,
+        auto_add_to_best_practices: bool = True
+    ) -> QCFeedback:
+        """
+        Review a Suno prompt with auto-learning feedback loop
+
+        This method implements the "learning" mechanism:
+        1. QC reviews the prompt
+        2. Extracts a quality score (0-10)
+        3. If score >= 7.0 AND auto_add_to_best_practices is True:
+           -> Automatically adds to ApprovedBestPractices sheet
+           -> This makes it available for Few-Shot Learning in future generations
+
+        Args:
+            suno_prompt: The Suno prompt to review
+            auto_add_to_best_practices: Auto-add if high quality (default: True)
+
+        Returns:
+            QC feedback with quality score
+        """
+        logger.info(f"QC reviewing Suno prompt {suno_prompt.id}")
+
+        # Create QC prompt for Gemini
+        qc_prompt = f"""
+You are a quality control expert for Suno v5 music prompts.
+
+Evaluate the following Suno prompt on a scale of 0-10:
+
+PROMPT:
+{suno_prompt.prompt_text}
+
+CONTEXT:
+- Genre: {suno_prompt.genre}
+- Mood: {suno_prompt.mood or 'Not specified'}
+- Tempo: {suno_prompt.tempo or 'Not specified'}
+
+EVALUATION CRITERIA (score each 0-10):
+1. Structure clarity (proper [Verse], [Chorus], [Bridge] markers)
+2. Imagery and sensory details
+3. Emotional impact
+4. Language quality and flow
+5. Genre appropriateness
+6. Originality
+7. Commercial viability
+
+Provide your response in this EXACT format:
+SCORE: [0-10 number]
+FEEDBACK: [Your detailed feedback]
+STRENGTHS: [Bullet points]
+IMPROVEMENTS: [Bullet points if score < 8]
+
+Be honest and critical. Only scores >= 7 will be used for training.
+"""
+
+        # Get Gemini's review
+        ai_response = await gemini_service.generate_text(qc_prompt, temperature=0.3)
+
+        # Parse response
+        quality_score, feedback, suggestions = self._parse_suno_qc_response(ai_response)
+
+        # Determine status
+        if quality_score >= 8.0:
+            qc_status = "APPROVED"
+        elif quality_score >= 6.0:
+            qc_status = "NEEDS_REVISION"
+        else:
+            qc_status = "REJECTED"
+
+        # Create QC feedback
+        qc_feedback = QCFeedback(
+            project_id=suno_prompt.metadata.get("project_id", "suno-standalone"),
+            target_id=suno_prompt.id,
+            target_type="suno_prompt",
+            qc_status=qc_status,
+            feedback=f"Quality Score: {quality_score}/10. {feedback}",
+            suggestions=suggestions
+        )
+
+        # Save to QC sheet
+        await self._save_to_sheets(qc_feedback)
+
+        # AUTO-LEARNING FEEDBACK LOOP
+        # If high quality, add to ApprovedBestPractices for Few-Shot Learning
+        if quality_score >= 7.0 and auto_add_to_best_practices:
+            await self._add_to_best_practices(suno_prompt, quality_score)
+            logger.info(f"✓ Added prompt {suno_prompt.id} to ApprovedBestPractices (Score: {quality_score})")
+
+        logger.info(f"QC complete: {qc_status} (Score: {quality_score}/10)")
+        return qc_feedback
+
+    def _parse_suno_qc_response(self, response: str) -> tuple[float, str, list[str]]:
+        """Parse Gemini's Suno QC response to extract score and feedback"""
+        lines = response.strip().split('\n')
+
+        quality_score = 5.0  # Default middle score
+        feedback = ""
+        suggestions = []
+
+        for line in lines:
+            line = line.strip()
+
+            # Extract score
+            if line.startswith("SCORE:"):
+                score_text = line.replace("SCORE:", "").strip()
+                try:
+                    # Handle formats like "8.5/10" or just "8.5"
+                    score_text = score_text.split('/')[0].strip()
+                    quality_score = float(score_text)
+                    quality_score = max(0.0, min(10.0, quality_score))  # Clamp 0-10
+                except:
+                    pass
+
+            # Extract feedback
+            elif line.startswith("FEEDBACK:"):
+                feedback = line.replace("FEEDBACK:", "").strip()
+
+            # Extract suggestions
+            elif line.startswith("IMPROVEMENTS:") or line.startswith("STRENGTHS:"):
+                continue  # Skip headers
+            elif line.startswith("-") or line.startswith("*"):
+                suggestions.append(line.lstrip("-* ").strip())
+
+        if not feedback:
+            feedback = response  # Use full response if parsing fails
+
+        return quality_score, feedback, suggestions
+
+    async def _add_to_best_practices(
+        self,
+        suno_prompt: SunoPromptResponse,
+        quality_score: float
+    ) -> bool:
+        """
+        Add high-quality prompt to ApprovedBestPractices sheet
+
+        This is the "learning" mechanism - excellent prompts become
+        Few-Shot examples for future generations.
+        """
+        try:
+            # Create SunoPromptExample
+            example = SunoPromptExample(
+                id=suno_prompt.id,
+                prompt_text=suno_prompt.prompt_text,
+                genre=suno_prompt.genre,
+                quality_score=quality_score,
+                performance_metrics=suno_prompt.metadata.get("performance", {}),
+                tags=[suno_prompt.mood or "", suno_prompt.tempo or ""],
+                created_at=datetime.utcnow(),
+                source="qc_approved"
+            )
+
+            # Save to ApprovedBestPractices sheet
+            data = [
+                example.id,
+                example.prompt_text[:500],  # Truncate for sheet
+                example.genre,
+                example.quality_score,
+                ",".join(example.tags),
+                example.source,
+                example.created_at.isoformat()
+            ]
+
+            success = await google_sheet_service.append_row(
+                SHEET_APPROVED_BEST_PRACTICES,
+                data
+            )
+
+            if success:
+                logger.info(f"✓ Prompt added to knowledge base for Few-Shot Learning")
+            else:
+                logger.warning(f"Failed to add prompt to ApprovedBestPractices")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Failed to add to best practices: {e}")
+            return False
+
+
+# Singleton instance
+agent2_service = Agent2QC()
+
+
+# DATEI: backend/app/agents/agent_12_style_analyst/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_12_style_analyst/service.py --------------------
+"""
+Agent 12: Style Analyzer - "The Reverse Engineer"
+Analyzes existing documentaries to extract style templates (Netflix-style cloning)
+"""
+
+from typing import Optional, Dict, Any, List
+import re
+from app.infrastructure.external_services.gemini_service import gemini_service
+from app.utils.logger import setup_logger
+
+logger = setup_logger("Agent12_StyleAnalyst")
+
+
+class Agent12StyleAnalyst:
+    """Singleton service for documentary style analysis"""
+
+    _instance: Optional['Agent12StyleAnalyst'] = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def analyze_video_style(
+        self,
+        video_url: str = None,
+        transcript_text: str = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze a documentary video to extract its style template
+
+        Process:
+        1. Extract transcript from YouTube URL or use provided text
+        2. Analyze pacing (words per minute)
+        3. Extract keywords for B-Roll suggestions
+        4. Identify narrative style and tone
+        5. Generate comprehensive style template
+
+        Args:
+            video_url: YouTube URL (e.g., "https://www.youtube.com/watch?v=...")
+            transcript_text: Pre-extracted transcript (alternative to video_url)
+
+        Returns:
+            StyleTemplate dict with:
+            - pacing: {wpm, cut_frequency, chapter_count}
+            - tone: {style, mood, narrator_voice}
+            - visual_style: {color_palette, shot_types, b_roll_frequency}
+            - keywords: List of key themes
+            - template_name: Suggested name for this style
+        """
+        logger.info(f"Analyzing documentary style from {'URL' if video_url else 'transcript'}")
+
+        transcript = None
+
+        # Step 1: Get transcript
+        if video_url:
+            transcript = await self._extract_youtube_transcript(video_url)
+        elif transcript_text:
+            transcript = transcript_text
+        else:
+            return {
+                "success": False,
+                "error": "Either video_url or transcript_text is required"
+            }
+
+        if not transcript:
+            return {
+                "success": False,
+                "error": "Failed to extract transcript"
+            }
+
+        # Step 2: Analyze pacing
+        pacing_analysis = self._analyze_pacing(transcript)
+
+        # Step 3: Extract keywords and analyze style with Gemini
+        style_analysis = await self._analyze_style_with_ai(transcript)
+
+        # Step 4: Build style template
+        style_template = {
+            "success": True,
+            "template_name": style_analysis.get("template_name", "Custom Documentary Style"),
+            "pacing": {
+                "words_per_minute": pacing_analysis["wpm"],
+                "estimated_duration_minutes": pacing_analysis["duration_minutes"],
+                "cut_frequency": pacing_analysis["cut_frequency"],
+                "chapter_count": pacing_analysis["chapter_count"]
+            },
+            "tone": {
+                "narrative_style": style_analysis.get("narrative_style", "Informative"),
+                "mood": style_analysis.get("mood", "Professional"),
+                "narrator_voice": style_analysis.get("narrator_voice", "Authoritative")
+            },
+            "visual_style": {
+                "color_palette": style_analysis.get("color_palette", "Neutral, professional"),
+                "shot_types": style_analysis.get("shot_types", ["Wide establishing", "Close-ups", "B-Roll"]),
+                "b_roll_frequency": style_analysis.get("b_roll_frequency", "Every 10-15 seconds")
+            },
+            "keywords": style_analysis.get("keywords", []),
+            "b_roll_suggestions": style_analysis.get("b_roll_suggestions", []),
+            "transcript_sample": transcript[:500] + "..." if len(transcript) > 500 else transcript
+        }
+
+        logger.info(f"Style template generated: {style_template['template_name']}")
+        return style_template
+
+    async def _extract_youtube_transcript(self, video_url: str) -> Optional[str]:
+        """
+        Extract transcript from YouTube video
+
+        Args:
+            video_url: YouTube URL
+
+        Returns:
+            Transcript text or None if failed
+        """
+        try:
+            from youtube_transcript_api import YouTubeTranscriptApi
+            import re
+
+            # Extract video ID from URL
+            video_id = None
+            patterns = [
+                r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
+                r'(?:embed\/)([0-9A-Za-z_-]{11})',
+                r'^([0-9A-Za-z_-]{11})$'
+            ]
+
+            for pattern in patterns:
+                match = re.search(pattern, video_url)
+                if match:
+                    video_id = match.group(1)
+                    break
+
+            if not video_id:
+                logger.error("Could not extract video ID from URL")
+                return None
+
+            logger.info(f"Extracting transcript for video ID: {video_id}")
+
+            # Get transcript
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+
+            # Combine all text
+            full_transcript = " ".join([entry['text'] for entry in transcript_list])
+
+            logger.info(f"Transcript extracted: {len(full_transcript)} characters")
+            return full_transcript
+
+        except Exception as e:
+            logger.error(f"Failed to extract YouTube transcript: {e}")
+            logger.warning("Using fallback mock transcript")
+            return self._generate_mock_transcript()
+
+    def _analyze_pacing(self, transcript: str) -> Dict[str, Any]:
+        """
+        Analyze pacing of the transcript
+
+        Args:
+            transcript: Full transcript text
+
+        Returns:
+            Dict with pacing metrics
+        """
+        # Count words
+        words = transcript.split()
+        word_count = len(words)
+
+        # Estimate duration (assuming ~150 WPM average speaking rate)
+        average_wpm = 150
+        duration_minutes = word_count / average_wpm
+
+        # Estimate cut frequency based on sentence count
+        sentences = re.split(r'[.!?]+', transcript)
+        sentence_count = len([s for s in sentences if s.strip()])
+
+        # Assume 1 cut every 2-3 sentences
+        estimated_cuts = sentence_count // 2.5
+
+        # Estimate chapters (one chapter every 3-4 minutes)
+        chapter_count = max(3, int(duration_minutes / 3.5))
+
+        pacing = {
+            "word_count": word_count,
+            "wpm": average_wpm,
+            "duration_minutes": round(duration_minutes, 1),
+            "sentence_count": sentence_count,
+            "cut_frequency": f"~{int(estimated_cuts / duration_minutes if duration_minutes > 0 else 0)} cuts/minute",
+            "chapter_count": chapter_count
+        }
+
+        logger.info(f"Pacing analysis: {duration_minutes:.1f} min, {word_count} words, {chapter_count} chapters")
+        return pacing
+
+    async def _analyze_style_with_ai(self, transcript: str) -> Dict[str, Any]:
+        """
+        Use Gemini AI to analyze narrative style and extract keywords
+
+        Args:
+            transcript: Full transcript text
+
+        Returns:
+            Dict with style analysis
+        """
+        # Truncate transcript if too long (Gemini has token limits)
+        transcript_sample = transcript[:5000] if len(transcript) > 5000 else transcript
+
+        analysis_prompt = f"""You are a professional documentary analyst specializing in Netflix-style productions.
+
+Analyze this documentary transcript and extract the following:
+
+**Transcript:**
+{transcript_sample}
+
+**Your analysis should include:**
+
+1. **Template Name**: A catchy name for this documentary style (e.g., "Vox Explainer", "BBC Nature Documentary", "True Crime Thriller")
+
+2. **Narrative Style**: How is the story told? (Options: Informative, Dramatic, Conversational, Academic, Investigative, Storytelling)
+
+3. **Mood**: Overall emotional tone (Options: Serious, Light-hearted, Dramatic, Inspiring, Educational, Mysterious)
+
+4. **Narrator Voice**: Style of narration (Options: Authoritative, Friendly, Neutral, Curious, Passionate, Dramatic)
+
+5. **Color Palette**: Describe the likely visual color scheme based on the topic and tone (e.g., "Warm earth tones", "Cool blues and grays", "Vibrant colors")
+
+6. **Shot Types**: List 3-5 common shot types likely used (e.g., "Drone aerials", "Close-up details", "Talking heads", "Archive footage")
+
+7. **B-Roll Frequency**: How often should B-roll be used? (e.g., "Every 10-15 seconds", "Continuous", "Minimal")
+
+8. **Keywords**: Extract 10-15 key themes/topics from the transcript
+
+9. **B-Roll Suggestions**: Suggest 8-10 specific B-roll shots that would complement this documentary
+
+**Output format (JSON):**
+{{
+  "template_name": "...",
+  "narrative_style": "...",
+  "mood": "...",
+  "narrator_voice": "...",
+  "color_palette": "...",
+  "shot_types": ["...", "...", "..."],
+  "b_roll_frequency": "...",
+  "keywords": ["...", "...", "..."],
+  "b_roll_suggestions": ["...", "...", "..."]
+}}
+
+Generate the analysis now:"""
+
+        try:
+            response = await gemini_service.generate_text(analysis_prompt, temperature=0.6)
+
+            # Try to parse JSON from response
+            import json
+
+            # Find JSON in response (sometimes Gemini adds extra text)
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                style_data = json.loads(json_match.group())
+                logger.info(f"AI style analysis complete: {style_data.get('template_name')}")
+                return style_data
+            else:
+                logger.warning("Could not parse JSON from AI response")
+                return self._generate_fallback_style()
+
+        except Exception as e:
+            logger.error(f"AI style analysis failed: {e}")
+            return self._generate_fallback_style()
+
+    def _generate_fallback_style(self) -> Dict[str, Any]:
+        """Generate fallback style template when AI analysis fails"""
+        return {
+            "template_name": "General Documentary Style",
+            "narrative_style": "Informative",
+            "mood": "Professional",
+            "narrator_voice": "Authoritative",
+            "color_palette": "Neutral, professional grading",
+            "shot_types": ["Wide establishing shots", "Interview close-ups", "B-Roll inserts", "Text overlays"],
+            "b_roll_frequency": "Every 10-15 seconds",
+            "keywords": ["documentary", "storytelling", "visual narrative"],
+            "b_roll_suggestions": [
+                "Establishing shots of location",
+                "Close-up details of subject matter",
+                "Time-lapse sequences",
+                "Archival footage",
+                "Transition shots"
+            ]
+        }
+
+    def _generate_mock_transcript(self) -> str:
+        """Generate mock transcript for testing when YouTube API fails"""
+        return """
+        In the heart of the digital age, artificial intelligence is reshaping our world in ways we never imagined.
+        From self-driving cars to medical diagnoses, AI is becoming an integral part of our daily lives.
+
+        But how did we get here? The journey began decades ago, when pioneers of computer science first dreamed
+        of machines that could think. Today, that dream is a reality, transforming industries and challenging
+        our understanding of what it means to be human.
+
+        This is the story of AI's rise, its potential, and the questions we must ask as we step into an
+        uncertain future. Join us as we explore the revolution that's changing everything.
+        """
+
+
+# Singleton instance
+agent12_service = Agent12StyleAnalyst()
+
+
+# DATEI: backend/app/agents/agent_16_stock_scout/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_16_stock_scout/service.py --------------------
+"""
+Agent 16: Stock Scout
+
+Finds free stock footage and images for documentary B-roll.
+Uses Pexels API (and optionally Pixabay) for royalty-free content.
+"""
+
+import logging
+from typing import Dict, Any, List, Optional
+import os
+import requests
+
+logger = logging.getLogger(__name__)
+
+
+class StockScoutService:
+    """Agent 16: Find free stock footage for B-roll"""
+
+    def __init__(self):
+        self.pexels_api_key = os.getenv("PEXELS_API_KEY")
+        self.pexels_base_url = "https://api.pexels.com/v1"
+        self.pexels_videos_url = "https://api.pexels.com/videos"
+        logger.info("Agent 16 (Stock Scout) initialized")
+
+    async def find_stock_footage(
+        self,
+        keywords: List[str],
+        media_type: str = "videos",
+        results_per_keyword: int = 3
+    ) -> Dict[str, Any]:
+        """
+        Find stock footage based on B-roll keywords
+
+        Args:
+            keywords: List of search terms from script
+            media_type: "videos" or "photos"
+            results_per_keyword: Number of results per keyword
+
+        Returns:
+            {
+                "success": bool,
+                "results": List[Dict],  # Video/photo results
+                "total_found": int,
+                "keywords_searched": List[str]
+            }
+        """
+        try:
+            if not self.pexels_api_key:
+                logger.warning("Pexels API key not set, using mockup data")
+                return self._get_mockup_results(keywords, media_type)
+
+            all_results = []
+
+            for keyword in keywords[:10]:  # Limit to 10 keywords to avoid rate limits
+                logger.info(f"Searching {media_type} for: {keyword}")
+
+                if media_type == "videos":
+                    results = await self._search_videos(keyword, results_per_keyword)
+                else:
+                    results = await self._search_photos(keyword, results_per_keyword)
+
+                for result in results:
+                    result["search_keyword"] = keyword
+
+                all_results.extend(results)
+
+            logger.info(f"Found {len(all_results)} {media_type} across {len(keywords)} keywords")
+
+            return {
+                "success": True,
+                "results": all_results,
+                "total_found": len(all_results),
+                "keywords_searched": keywords[:10],
+                "media_type": media_type
+            }
+
+        except Exception as e:
+            logger.error(f"Error finding stock footage: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "results": []
+            }
+
+    async def _search_videos(self, query: str, per_page: int = 3) -> List[Dict[str, Any]]:
+        """Search for videos on Pexels"""
+        try:
+            headers = {
+                "Authorization": self.pexels_api_key
+            }
+            params = {
+                "query": query,
+                "per_page": per_page,
+                "orientation": "landscape"  # Best for documentaries
+            }
+
+            response = requests.get(
+                f"{self.pexels_videos_url}/search",
+                headers=headers,
+                params=params,
+                timeout=10
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Pexels API error: {response.status_code}")
+                return []
+
+            data = response.json()
+            videos = []
+
+            for video in data.get("videos", []):
+                # Get the best quality video file
+                video_files = video.get("video_files", [])
+                hd_file = self._get_best_quality_file(video_files)
+
+                videos.append({
+                    "id": video.get("id"),
+                    "title": f"{query.title()} - {video.get('id')}",
+                    "duration": video.get("duration", 0),
+                    "width": video.get("width", 0),
+                    "height": video.get("height", 0),
+                    "thumbnail": video.get("image"),
+                    "download_url": hd_file.get("link") if hd_file else None,
+                    "quality": hd_file.get("quality") if hd_file else "unknown",
+                    "video_url": video.get("url"),
+                    "photographer": video.get("user", {}).get("name", "Unknown"),
+                    "source": "Pexels"
+                })
+
+            return videos
+
+        except Exception as e:
+            logger.error(f"Error searching videos: {str(e)}")
+            return []
+
+    async def _search_photos(self, query: str, per_page: int = 3) -> List[Dict[str, Any]]:
+        """Search for photos on Pexels"""
+        try:
+            headers = {
+                "Authorization": self.pexels_api_key
+            }
+            params = {
+                "query": query,
+                "per_page": per_page,
+                "orientation": "landscape"
+            }
+
+            response = requests.get(
+                f"{self.pexels_base_url}/search",
+                headers=headers,
+                params=params,
+                timeout=10
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Pexels API error: {response.status_code}")
+                return []
+
+            data = response.json()
+            photos = []
+
+            for photo in data.get("photos", []):
+                photos.append({
+                    "id": photo.get("id"),
+                    "title": f"{query.title()} - {photo.get('id')}",
+                    "width": photo.get("width", 0),
+                    "height": photo.get("height", 0),
+                    "thumbnail": photo.get("src", {}).get("small"),
+                    "preview_url": photo.get("src", {}).get("large"),
+                    "download_url": photo.get("src", {}).get("original"),
+                    "photographer": photo.get("photographer", "Unknown"),
+                    "photo_url": photo.get("url"),
+                    "source": "Pexels"
+                })
+
+            return photos
+
+        except Exception as e:
+            logger.error(f"Error searching photos: {str(e)}")
+            return []
+
+    def _get_best_quality_file(self, video_files: List[Dict]) -> Optional[Dict]:
+        """Select the best quality video file (HD preferred)"""
+        if not video_files:
+            return None
+
+        # Prefer HD quality
+        hd_file = next((f for f in video_files if f.get("quality") == "hd"), None)
+        if hd_file:
+            return hd_file
+
+        # Fallback to SD
+        sd_file = next((f for f in video_files if f.get("quality") == "sd"), None)
+        if sd_file:
+            return sd_file
+
+        # Return first available
+        return video_files[0]
+
+    def _get_mockup_results(self, keywords: List[str], media_type: str) -> Dict[str, Any]:
+        """Return mockup results when API key is not available"""
+        mockup_results = []
+
+        for i, keyword in enumerate(keywords[:5]):
+            mockup_results.append({
+                "id": f"mockup_{i}",
+                "title": f"{keyword.title()} - Stock {media_type.rstrip('s').title()}",
+                "duration": 15 if media_type == "videos" else None,
+                "width": 1920,
+                "height": 1080,
+                "thumbnail": f"https://via.placeholder.com/400x225?text={keyword.replace(' ', '+')}",
+                "download_url": f"https://pexels.com/mockup/{keyword}",
+                "quality": "hd",
+                "photographer": "Stock Artist",
+                "source": "Pexels (Mockup)",
+                "search_keyword": keyword
+            })
+
+        return {
+            "success": True,
+            "results": mockup_results,
+            "total_found": len(mockup_results),
+            "keywords_searched": keywords[:5],
+            "media_type": media_type,
+            "note": "API key not configured - showing mockup data"
+        }
+
+    async def extract_broll_keywords(self, script: Dict[str, Any]) -> List[str]:
+        """
+        Extract B-roll keywords from script
+
+        Args:
+            script: Documentary script from Agent 13
+
+        Returns:
+            List of unique keywords for stock footage search
+        """
+        keywords = []
+
+        if "chapters" in script:
+            for chapter in script["chapters"]:
+                # Extract from B-roll shots
+                b_roll_shots = chapter.get("b_roll_shots", [])
+                for shot in b_roll_shots:
+                    if isinstance(shot, str):
+                        # Clean and extract keywords
+                        cleaned = shot.lower().strip('- ').strip()
+                        keywords.append(cleaned)
+
+        # Remove duplicates while preserving order
+        unique_keywords = []
+        seen = set()
+        for keyword in keywords:
+            if keyword not in seen:
+                unique_keywords.append(keyword)
+                seen.add(keyword)
+
+        logger.info(f"Extracted {len(unique_keywords)} unique B-roll keywords from script")
+        return unique_keywords[:20]  # Limit to 20 to avoid excessive API calls
+
+
+# Singleton instance
+stock_scout_service = StockScoutService()
+
+
+# DATEI: backend/app/agents/agent_13_story_architect/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_13_story_architect/service.py --------------------
+"""
+Agent 13: Story Architect - "The Narrative Designer"
+Creates structured documentary scripts using the 3-Act structure (Netflix-style)
+"""
+
+from typing import Optional, Dict, Any, List
+from app.infrastructure.external_services.gemini_service import gemini_service
+from app.utils.logger import setup_logger
+
+logger = setup_logger("Agent13_StoryArchitect")
+
+
+class Agent13StoryArchitect:
+    """Singleton service for documentary script generation"""
+
+    _instance: Optional['Agent13StoryArchitect'] = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def create_3_act_structure(
+        self,
+        topic: str,
+        duration_minutes: int = 15,
+        style_template: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a complete 15-minute documentary script using 3-Act structure
+
+        3-Act Structure:
+        - Act 1 (Hook): 0-2 minutes - Grab attention, establish stakes
+        - Act 2 (Conflict): 2-10 minutes - Explore the problem/journey
+        - Act 3 (Resolution): 10-15 minutes - Provide answers/conclusion
+
+        Args:
+            topic: Documentary topic (e.g., "The Rise of AI")
+            duration_minutes: Total duration (default: 15)
+            style_template: Optional style template from Agent 12
+
+        Returns:
+            Complete documentary script with:
+            - chapters: List of chapter objects with timing
+            - narration: Full narrator script
+            - b_roll: B-roll suggestions for each chapter
+            - structure: 3-act breakdown
+        """
+        logger.info(f"Creating 3-act structure for topic: '{topic}'")
+
+        # Use style template if provided, otherwise use defaults
+        narrative_style = "Informative"
+        mood = "Professional"
+        if style_template:
+            narrative_style = style_template.get("tone", {}).get("narrative_style", "Informative")
+            mood = style_template.get("tone", {}).get("mood", "Professional")
+
+        # Generate script with Gemini
+        script = await self._generate_script_with_ai(
+            topic=topic,
+            duration_minutes=duration_minutes,
+            narrative_style=narrative_style,
+            mood=mood,
+            style_template=style_template
+        )
+
+        logger.info(f"Script generated: {len(script.get('chapters', []))} chapters")
+        return script
+
+    async def _generate_script_with_ai(
+        self,
+        topic: str,
+        duration_minutes: int,
+        narrative_style: str,
+        mood: str,
+        style_template: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Use Gemini Pro to generate the complete documentary script
+
+        Args:
+            topic: Documentary topic
+            duration_minutes: Total duration
+            narrative_style: Style of narration
+            mood: Emotional tone
+            style_template: Optional style template
+
+        Returns:
+            Complete script structure
+        """
+        # Build style context
+        style_context = ""
+        if style_template:
+            style_context = f"""
+**Style Template** (clone this style):
+- Template: {style_template.get('template_name', 'N/A')}
+- Narrative: {narrative_style}
+- Mood: {mood}
+- Pacing: {style_template.get('pacing', {}).get('words_per_minute', 150)} WPM
+- B-Roll Frequency: {style_template.get('visual_style', {}).get('b_roll_frequency', 'Every 10-15 seconds')}
+"""
+        else:
+            style_context = f"""
+**Style Guidelines**:
+- Narrative: {narrative_style}
+- Mood: {mood}
+- Pacing: ~150 words per minute
+- B-Roll: Every 10-15 seconds
+"""
+
+        script_prompt = f"""You are a professional documentary scriptwriter for Netflix-style productions.
+
+Create a {duration_minutes}-minute documentary script about: **{topic}**
+
+{style_context}
+
+**3-Act Structure Requirements:**
+
+**ACT 1: THE HOOK** (0-2 minutes, ~300 words)
+- Open with a compelling hook that grabs attention immediately
+- Establish the stakes: Why does this topic matter?
+- Introduce the central question or conflict
+- Create emotional connection with the audience
+
+**ACT 2: THE CONFLICT/JOURNEY** (2-10 minutes, ~1200 words)
+- Dive deep into the problem, history, or journey
+- Present multiple perspectives or complications
+- Build tension and intrigue
+- Use storytelling to maintain engagement
+- Include turning points or revelations
+
+**ACT 3: THE RESOLUTION** (10-15 minutes, ~750 words)
+- Provide answers, solutions, or insights
+- Tie back to the opening hook
+- Deliver satisfying conclusion
+- Leave audience with something to think about
+- End on a strong, memorable note
+
+**Output Format (JSON):**
+{{
+  "title": "Documentary title",
+  "logline": "One-sentence description",
+  "total_duration_minutes": {duration_minutes},
+  "total_word_count": 2250,
+  "structure": {{
+    "act_1": {{
+      "title": "The Hook",
+      "duration_range": "0:00-2:00",
+      "objective": "...",
+      "key_points": ["...", "...", "..."]
+    }},
+    "act_2": {{
+      "title": "The Conflict",
+      "duration_range": "2:00-10:00",
+      "objective": "...",
+      "key_points": ["...", "...", "..."]
+    }},
+    "act_3": {{
+      "title": "The Resolution",
+      "duration_range": "10:00-15:00",
+      "objective": "...",
+      "key_points": ["...", "...", "..."]
+    }}
+  }},
+  "chapters": [
+    {{
+      "chapter_number": 1,
+      "title": "...",
+      "start_time": "0:00",
+      "end_time": "2:00",
+      "act": 1,
+      "narration": "Full narrator script for this chapter (300 words)...",
+      "b_roll_shots": [
+        "Shot 1 description",
+        "Shot 2 description",
+        "Shot 3 description"
+      ],
+      "key_visuals": "Main visual focus"
+    }},
+    {{
+      "chapter_number": 2,
+      "title": "...",
+      "start_time": "2:00",
+      "end_time": "5:00",
+      "act": 2,
+      "narration": "Full narrator script (450 words)...",
+      "b_roll_shots": ["...", "...", "..."],
+      "key_visuals": "..."
+    }}
+    // ... continue for all chapters (aim for 5-7 total chapters)
+  ]
+}}
+
+**Important:**
+- Write in {narrative_style.lower()} style
+- Maintain {mood.lower()} tone throughout
+- Each chapter should have FULL narrator script (not just bullet points)
+- B-roll shots should be specific and actionable
+- Ensure smooth transitions between chapters
+- Total word count should be ~2250 words ({duration_minutes} min × 150 wpm)
+
+Generate the complete documentary script now:"""
+
+        try:
+            response = await gemini_service.generate_text(
+                script_prompt,
+                temperature=0.8,  # Higher creativity for storytelling
+                max_tokens=8000    # Need space for full script
+            )
+
+            # Try to parse JSON from response
+            import json
+            import re
+
+            # Find JSON in response
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                script_data = json.loads(json_match.group())
+
+                # Add metadata
+                script_data["topic"] = topic
+                script_data["success"] = True
+                script_data["generated_at"] = self._get_timestamp()
+
+                logger.info(f"Script generated successfully: {script_data.get('title')}")
+                return script_data
+            else:
+                logger.warning("Could not parse JSON from AI response, using fallback")
+                return self._generate_fallback_script(topic, duration_minutes)
+
+        except Exception as e:
+            logger.error(f"AI script generation failed: {e}")
+            return self._generate_fallback_script(topic, duration_minutes)
+
+    def _generate_fallback_script(
+        self,
+        topic: str,
+        duration_minutes: int
+    ) -> Dict[str, Any]:
+        """Generate fallback script when AI generation fails"""
+        return {
+            "success": True,
+            "topic": topic,
+            "title": f"The Story of {topic}",
+            "logline": f"An in-depth exploration of {topic} and its impact on our world",
+            "total_duration_minutes": duration_minutes,
+            "total_word_count": duration_minutes * 150,
+            "structure": {
+                "act_1": {
+                    "title": "The Hook",
+                    "duration_range": "0:00-2:00",
+                    "objective": "Grab attention and establish stakes",
+                    "key_points": [
+                        "Open with compelling question",
+                        "Introduce the topic's relevance",
+                        "Establish emotional connection"
+                    ]
+                },
+                "act_2": {
+                    "title": "The Journey",
+                    "duration_range": "2:00-10:00",
+                    "objective": "Explore the topic in depth",
+                    "key_points": [
+                        "Present historical context",
+                        "Explore different perspectives",
+                        "Build complexity and intrigue"
+                    ]
+                },
+                "act_3": {
+                    "title": "The Resolution",
+                    "duration_range": "10:00-15:00",
+                    "objective": "Provide insights and conclusion",
+                    "key_points": [
+                        "Tie themes together",
+                        "Provide actionable insights",
+                        "End with memorable takeaway"
+                    ]
+                }
+            },
+            "chapters": [
+                {
+                    "chapter_number": 1,
+                    "title": "The Opening Hook",
+                    "start_time": "0:00",
+                    "end_time": "2:00",
+                    "act": 1,
+                    "narration": f"What if I told you that {topic} is changing the world in ways you never imagined? From the way we work to how we think, this force is reshaping our reality. But to understand where we're going, we need to understand where we've been. This is the story of {topic}.",
+                    "b_roll_shots": [
+                        f"Montage of {topic} in action",
+                        "Close-up of key elements",
+                        "Wide establishing shot"
+                    ],
+                    "key_visuals": "Dramatic opening sequence"
+                },
+                {
+                    "chapter_number": 2,
+                    "title": "The Origins",
+                    "start_time": "2:00",
+                    "end_time": "5:00",
+                    "act": 2,
+                    "narration": f"To understand {topic}, we must go back to its beginnings. The seeds of this revolution were planted decades ago...",
+                    "b_roll_shots": [
+                        "Archival footage",
+                        "Historical timeline graphics",
+                        "Key figures and moments"
+                    ],
+                    "key_visuals": "Historical context"
+                },
+                {
+                    "chapter_number": 3,
+                    "title": "The Turning Point",
+                    "start_time": "5:00",
+                    "end_time": "10:00",
+                    "act": 2,
+                    "narration": f"But everything changed when... The implications of {topic} became impossible to ignore.",
+                    "b_roll_shots": [
+                        "Dramatic transition shots",
+                        "Modern examples",
+                        "Expert interviews"
+                    ],
+                    "key_visuals": "Pivotal moment"
+                },
+                {
+                    "chapter_number": 4,
+                    "title": "The Future Ahead",
+                    "start_time": "10:00",
+                    "end_time": "15:00",
+                    "act": 3,
+                    "narration": f"So where do we go from here? The future of {topic} is being written right now, by people like you. The question isn't whether {topic} will shape our world—it's how we'll shape it.",
+                    "b_roll_shots": [
+                        "Future-focused imagery",
+                        "Inspirational shots",
+                        "Closing montage"
+                    ],
+                    "key_visuals": "Hopeful conclusion"
+                }
+            ],
+            "generated_at": self._get_timestamp(),
+            "note": "Fallback script generated. For best results, configure GEMINI_API_KEY."
+        }
+
+    def _get_timestamp(self) -> str:
+        """Get current timestamp"""
+        from datetime import datetime
+        return datetime.now().isoformat()
+
+
+# Singleton instance
+agent13_service = Agent13StoryArchitect()
+
+
+# DATEI: backend/app/agents/agent_4_scene_breakdown/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_4_scene_breakdown/service.py --------------------
+"""
+Agent 4: Scene Breakdown - "The Director"
+Generates precise camera, lighting, and scene descriptions based on energy mapping
+"""
+
+from typing import Optional, List, Dict, Any
+from app.models.data_models import SceneBreakdown
+from app.infrastructure.database.google_sheet_service import (
+    google_sheet_service,
+    SHEET_A4_SCENES,
+    SHEET_VIDEO_PROMPT_CHEATSHEET
+)
+from app.infrastructure.external_services.gemini_service import gemini_service
+from app.utils.logger import setup_logger
+import random
+
+logger = setup_logger("Agent4_SceneBreakdown")
+
+
+class Agent4SceneBreakdown:
+    """Singleton service for scene breakdown and directing"""
+
+    _instance: Optional['Agent4SceneBreakdown'] = None
+    _cheatsheet_cache: Optional[Dict[str, Any]] = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def process_scenes(
+        self,
+        scenes: List[Dict[str, Any]],
+        project_id: Optional[str] = None,
+        use_ai_enhancement: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        Process scenes from Agent 3 and add camera, lighting, and descriptions
+
+        Args:
+            scenes: List of scenes from audio analysis
+            project_id: Optional project ID
+            use_ai_enhancement: Use Gemini AI for description enhancement
+
+        Returns:
+            Enhanced scenes with camera, lighting, and description
+        """
+        logger.info(f"Processing {len(scenes)} scenes for directing")
+
+        # Load cheatsheet keywords
+        cheatsheet = await self._load_cheatsheet()
+
+        enhanced_scenes = []
+
+        for scene in scenes:
+            # Map energy level to camera/lighting choices
+            camera, lighting = self._map_energy_to_visuals(
+                scene.get("energy", "Medium"),
+                cheatsheet
+            )
+
+            # Generate description
+            if use_ai_enhancement:
+                description = await self._generate_ai_description(scene, camera, lighting)
+            else:
+                description = self._generate_template_description(scene, camera, lighting)
+
+            enhanced_scene = {
+                **scene,  # Keep original data (id, start, end, energy, type)
+                "camera": camera,
+                "lighting": lighting,
+                "description": description,
+                "project_id": project_id
+            }
+
+            enhanced_scenes.append(enhanced_scene)
+
+        logger.info(f"✅ Enhanced {len(enhanced_scenes)} scenes with directing details")
+        return enhanced_scenes
+
+    async def _load_cheatsheet(self) -> Dict[str, Any]:
+        """
+        Load Video_Prompt_Cheatsheet from Google Sheets
+
+        Returns:
+            Dictionary with camera and lighting keywords organized by energy level
+        """
+        # Check cache first
+        if self._cheatsheet_cache:
+            logger.info("Using cached cheatsheet")
+            return self._cheatsheet_cache
+
+        try:
+            records = await google_sheet_service.get_all_records(SHEET_VIDEO_PROMPT_CHEATSHEET)
+
+            if records and len(records) > 0:
+                logger.info(f"Loaded {len(records)} cheatsheet entries")
+
+                # Organize by energy level
+                cheatsheet = {
+                    "Low": {"camera": [], "lighting": []},
+                    "Medium": {"camera": [], "lighting": []},
+                    "High": {"camera": [], "lighting": []}
+                }
+
+                for record in records:
+                    energy = record.get("energy_level", "Medium")
+                    category = record.get("category", "camera")  # camera or lighting
+                    keyword = record.get("keyword", "")
+
+                    if energy in cheatsheet and keyword:
+                        if category == "camera":
+                            cheatsheet[energy]["camera"].append(keyword)
+                        elif category == "lighting":
+                            cheatsheet[energy]["lighting"].append(keyword)
+
+                self._cheatsheet_cache = cheatsheet
+                return cheatsheet
+
+        except Exception as e:
+            logger.warning(f"Could not load cheatsheet from sheets: {e}")
+
+        # Fallback: Hardcoded cheatsheet
+        logger.info("Using fallback cheatsheet")
+        fallback_cheatsheet = {
+            "Low": {
+                "camera": ["Slow Zoom", "Static", "Gentle Pan", "Dolly In", "Close-Up"],
+                "lighting": ["Soft", "Ambient", "Blue Hour", "Moonlight", "Warm Glow"]
+            },
+            "Medium": {
+                "camera": ["Tracking Shot", "Smooth Pan", "Medium Shot", "Over-Shoulder", "Tilt"],
+                "lighting": ["Natural", "Golden Hour", "Balanced", "Studio", "Mixed"]
+            },
+            "High": {
+                "camera": ["Whip Pan", "Shake", "Quick Cut", "Dutch Angle", "Crash Zoom"],
+                "lighting": ["Strobe", "Neon", "High Contrast", "Intense", "Flash"]
+            }
+        }
+
+        self._cheatsheet_cache = fallback_cheatsheet
+        return fallback_cheatsheet
+
+    def _map_energy_to_visuals(
+        self,
+        energy: str,
+        cheatsheet: Dict[str, Any]
+    ) -> tuple[str, str]:
+        """
+        Map energy level to camera and lighting choices
+
+        Args:
+            energy: Energy level (Low/Medium/High)
+            cheatsheet: Loaded cheatsheet
+
+        Returns:
+            Tuple of (camera_movement, lighting_style)
+        """
+        if energy not in cheatsheet or not cheatsheet[energy]:
+            energy = "Medium"  # Fallback
+
+        # Randomly select from appropriate energy level
+        camera_options = cheatsheet[energy].get("camera", ["Static"])
+        lighting_options = cheatsheet[energy].get("lighting", ["Natural"])
+
+        camera = random.choice(camera_options) if camera_options else "Static"
+        lighting = random.choice(lighting_options) if lighting_options else "Natural"
+
+        return camera, lighting
+
+    async def _generate_ai_description(
+        self,
+        scene: Dict[str, Any],
+        camera: str,
+        lighting: str
+    ) -> str:
+        """
+        Generate AI-enhanced scene description using Gemini
+
+        Args:
+            scene: Scene data
+            camera: Selected camera movement
+            lighting: Selected lighting style
+
+        Returns:
+            Enhanced description
+        """
+        prompt = f"""You are a music video director writing shot descriptions.
+
+SCENE DETAILS:
+- Timing: {scene.get('start', 0):.2f}s - {scene.get('end', 0):.2f}s ({scene.get('duration', 0):.2f}s)
+- Section: {scene.get('type', 'Scene')}
+- Energy: {scene.get('energy', 'Medium')}
+- Camera: {camera}
+- Lighting: {lighting}
+
+Generate a concise, cinematic shot description (max 2 sentences, 30 words).
+Focus on visual mood and action, not technical details.
+
+Example format:
+"Artist performs in a dimly lit studio, camera slowly zooming in on their intense expression. Soft blue ambient light creates an intimate atmosphere."
+
+Your description:"""
+
+        try:
+            ai_response = await gemini_service.generate_text(prompt)
+            # Clean up response
+            description = ai_response.strip().replace('"', '')
+
+            # Ensure reasonable length
+            if len(description) > 200:
+                description = description[:197] + "..."
+
+            return description
+
+        except Exception as e:
+            logger.warning(f"AI description generation failed: {e}")
+            return self._generate_template_description(scene, camera, lighting)
+
+    def _generate_template_description(
+        self,
+        scene: Dict[str, Any],
+        camera: str,
+        lighting: str
+    ) -> str:
+        """
+        Generate template-based description (fallback)
+
+        Args:
+            scene: Scene data
+            camera: Selected camera movement
+            lighting: Selected lighting style
+
+        Returns:
+            Template description
+        """
+        scene_type = scene.get("type", "Scene")
+        energy = scene.get("energy", "Medium")
+
+        # Energy-specific templates
+        templates = {
+            "Low": [
+                f"Intimate {scene_type.lower()} with {camera.lower()}. {lighting} lighting creates a contemplative mood.",
+                f"Artist in reflective moment during {scene_type.lower()}. {camera}, bathed in {lighting.lower()} light.",
+            ],
+            "Medium": [
+                f"Dynamic {scene_type.lower()} captured with {camera.lower()}. {lighting} lighting balances energy and emotion.",
+                f"Artist performs {scene_type.lower()} with controlled intensity. {camera}, {lighting.lower()} atmosphere.",
+            ],
+            "High": [
+                f"Explosive {scene_type.lower()} with intense {camera.lower()}. {lighting} lighting amplifies the raw energy.",
+                f"High-energy {scene_type.lower()} performance. Rapid {camera.lower()}, dramatic {lighting.lower()} effects.",
+            ]
+        }
+
+        template_list = templates.get(energy, templates["Medium"])
+        return random.choice(template_list)
+
+    async def create_scene(self, project_id: str, scene_data: SceneBreakdown) -> SceneBreakdown:
+        """
+        Legacy method for backward compatibility
+
+        Args:
+            project_id: Project ID
+            scene_data: Scene breakdown data
+
+        Returns:
+            Created scene breakdown
+        """
+        logger.info(f"Creating scene for project {project_id}")
+
+        # Save to Google Sheets
+        await self._save_to_sheets(scene_data)
+
+        return scene_data
+
+    async def get_scenes(self, project_id: str) -> List[SceneBreakdown]:
+        """Get all scenes for a project"""
+        records = await google_sheet_service.get_all_records(SHEET_A4_SCENES)
+
+        scenes = []
+        for record in records:
+            if record.get("project_id") == project_id:
+                scenes.append(SceneBreakdown(**record))
+
+        return scenes
+
+    async def _save_to_sheets(self, scene: SceneBreakdown) -> bool:
+        """Save scene breakdown to Google Sheets"""
+        data = [
+            scene.id,
+            scene.project_id,
+            scene.scene_number,
+            scene.timestamp_start,
+            scene.timestamp_end,
+            scene.music_segment,
+            scene.visual_concept,
+            scene.mood,
+            ", ".join(scene.style_references),
+            scene.created_at.isoformat()
+        ]
+
+        return await google_sheet_service.append_row(SHEET_A4_SCENES, data)
+
+
+# Singleton instance
+agent4_service = Agent4SceneBreakdown()
+
+
+# DATEI: backend/app/agents/agent_6_veo_prompter/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_6_veo_prompter/service.py --------------------
+"""
+Agent 6: Veo Prompter - "The Narrative Director"
+Generates narrative-style video prompts optimized for Google Veo with Few-Shot Learning
+"""
+
+from typing import Optional, List, Dict, Any
+from app.infrastructure.external_services.gemini_service import gemini_service
+from app.infrastructure.database.google_sheet_service import (
+    google_sheet_service,
+    SHEET_A6_VIDEO_EXAMPLES
+)
+from app.utils.logger import setup_logger
+
+logger = setup_logger("Agent6_VeoPrompter")
+
+
+class Agent6VeoPrompter:
+    """Singleton service for Veo prompt generation with Few-Shot Learning"""
+
+    _instance: Optional['Agent6VeoPrompter'] = None
+    _examples_cache: Optional[List[Dict[str, str]]] = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def generate_prompt(
+        self,
+        scene: Dict[str, Any],
+        style: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate Veo-optimized narrative video prompt for a scene
+
+        Veo Prompt Style: Narrative, flowing sentences that describe the scene
+        like a director's note. Naturally integrates camera movement and style.
+
+        Args:
+            scene: Scene dict with id, start, end, type, energy, camera, lighting, description
+            style: Style dict with name, suffix, negative (optional)
+
+        Returns:
+            Dict with:
+            - prompt: Generated narrative prompt (max 500 chars)
+            - negative: Negative prompt from style
+            - model: "veo"
+            - scene_id: Scene ID
+        """
+        logger.info(f"Generating Veo narrative prompt for scene {scene.get('id', 'unknown')}")
+
+        try:
+            # Load few-shot examples
+            examples = await self._load_few_shot_examples(model="veo")
+
+            # Build few-shot prompt
+            few_shot_section = self._build_few_shot_section(examples)
+
+            # Build the generation prompt
+            scene_type = scene.get("type", "Scene")
+            energy = scene.get("energy", "Medium")
+            camera = scene.get("camera", "Static")
+            lighting = scene.get("lighting", "Natural")
+            description = scene.get("description", "Artist performs")
+
+            # Style suffix (if provided)
+            style_suffix = ""
+            negative_prompt = ""
+            if style:
+                style_suffix = style.get("suffix", "")
+                negative_prompt = style.get("negative", "")
+
+            generation_prompt = f"""You are a professional video director writing prompts for Google Veo.
+
+FEW-SHOT EXAMPLES (Study these narrative patterns):
+{few_shot_section}
+
+Now generate a NARRATIVE PROMPT for:
+
+SCENE DETAILS:
+- Type: {scene_type}
+- Energy: {energy}
+- Camera: {camera}
+- Lighting: {lighting}
+- Description: {description}
+- Style: {style_suffix if style_suffix else "cinematic, professional"}
+
+REQUIREMENTS:
+1. Write as FLOWING NARRATIVE (like describing a scene in a script)
+2. Naturally integrate camera movement into the sentence
+3. Naturally integrate lighting/mood
+4. Weave in style suffix organically
+5. Max 500 characters
+6. Single paragraph, no bullet points
+7. Focus on visual storytelling
+
+Example format: "The camera [movement] as [subject] [action] in [environment], [lighting], [style suffix]."
+
+Generate ONLY the narrative prompt, no explanation:"""
+
+            # Get AI response
+            ai_response = await gemini_service.generate_text(generation_prompt, temperature=0.7)
+
+            # Clean up response
+            prompt_text = ai_response.strip().replace('"', '').replace("'", "")
+
+            # Ensure max 500 chars for Veo
+            if len(prompt_text) > 500:
+                prompt_text = prompt_text[:497] + "..."
+
+            logger.info(f"Generated Veo prompt ({len(prompt_text)} chars)")
+
+            return {
+                "prompt": prompt_text,
+                "negative": negative_prompt,
+                "model": "veo",
+                "scene_id": scene.get("id"),
+                "duration": scene.get("duration", 8.0)
+            }
+
+        except Exception as e:
+            logger.error(f"Veo prompt generation failed: {e}")
+            # Fallback
+            fallback = f"A music video scene featuring dynamic camera movement and {style_suffix if style_suffix else 'cinematic visuals'}"
+            return {
+                "prompt": fallback,
+                "negative": negative_prompt if style else "",
+                "model": "veo",
+                "scene_id": scene.get("id"),
+                "duration": scene.get("duration", 8.0)
+            }
+
+    async def _load_few_shot_examples(self, model: str = "veo", limit: int = 3) -> List[Dict[str, str]]:
+        """
+        Load few-shot examples from A6_Video_Examples Google Sheet
+
+        Returns:
+            List of example dicts with 'prompt' and 'model' keys
+        """
+        # Check cache
+        if self._examples_cache:
+            veo_examples = [e for e in self._examples_cache if e.get("model") == "veo"]
+            return veo_examples[:limit]
+
+        try:
+            records = await google_sheet_service.get_all_records(SHEET_A6_VIDEO_EXAMPLES)
+
+            if records and len(records) > 0:
+                logger.info(f"Loaded {len(records)} few-shot examples from database")
+
+                examples = []
+                for record in records:
+                    examples.append({
+                        "model": record.get("model", "veo"),
+                        "prompt": record.get("prompt", ""),
+                        "category": record.get("category", "general")
+                    })
+
+                self._examples_cache = examples
+
+                # Filter for Veo examples
+                veo_examples = [e for e in examples if e.get("model") == "veo"]
+                return veo_examples[:limit]
+
+        except Exception as e:
+            logger.warning(f"Could not load examples from database: {e}")
+
+        # Fallback: Hardcoded examples
+        logger.info("Using fallback few-shot examples")
+        fallback_examples = [
+            {
+                "model": "veo",
+                "prompt": "The camera slowly zooms in as the artist stands alone in a dimly lit studio, soft blue ambient light creating an intimate atmosphere, shot on CineStill 800T film with cinematic bokeh.",
+                "category": "low_energy"
+            },
+            {
+                "model": "veo",
+                "prompt": "Dynamic whip pan follows the artist dancing through vibrant neon-lit streets, strobe lighting amplifying the raw energy, music video aesthetic with high contrast and colorful gels.",
+                "category": "high_energy"
+            },
+            {
+                "model": "veo",
+                "prompt": "A smooth tracking shot captures the artist performing with controlled intensity, natural golden hour lighting balances energy and emotion, shot during golden hour with warm skin tones.",
+                "category": "medium_energy"
+            }
+        ]
+
+        return fallback_examples[:limit]
+
+    def _build_few_shot_section(self, examples: List[Dict[str, str]]) -> str:
+        """Build few-shot examples section for the prompt"""
+        if not examples:
+            return "No examples available."
+
+        lines = []
+        for idx, example in enumerate(examples, 1):
+            lines.append(f"Example {idx}: \"{example.get('prompt', '')}\"")
+
+        return "\n".join(lines)
+
+    async def save_as_gold_standard(
+        self,
+        prompt: str,
+        scene_description: str,
+        energy: str = "medium"
+    ) -> Dict[str, Any]:
+        """
+        Save a generated prompt as a gold standard example (Feedback Loop)
+
+        This enables the system to learn from its own successes.
+        Good prompts are saved to A6_Video_Examples and become part
+        of the Few-Shot Learning knowledge base for future generations.
+
+        Args:
+            prompt: The generated Veo prompt to save
+            scene_description: Brief description of the scene
+            energy: Energy level (low, medium, high)
+
+        Returns:
+            Dict with success status and message
+        """
+        logger.info(f"Saving Veo prompt as gold standard: {prompt[:50]}...")
+
+        try:
+            from datetime import datetime
+
+            # Prepare data for A6_Video_Examples sheet
+            timestamp = datetime.now().isoformat()
+            data = [
+                "veo",  # model
+                prompt,  # prompt
+                energy,  # category/energy level
+                scene_description,  # description
+                timestamp,  # created_at
+                "auto-learned"  # source
+            ]
+
+            # Append to Google Sheets
+            success = await google_sheet_service.append_row(
+                SHEET_A6_VIDEO_EXAMPLES,
+                data
+            )
+
+            if success:
+                # Clear cache to force reload with new example
+                self._examples_cache = None
+
+                logger.info(f"✅ Veo prompt saved to gold standards")
+                return {
+                    "success": True,
+                    "message": "Prompt added to Few-Shot Learning database",
+                    "model": "veo"
+                }
+            else:
+                logger.error("Failed to save prompt to database")
+                return {
+                    "success": False,
+                    "message": "Failed to save to database"
+                }
+
+        except Exception as e:
+            logger.error(f"Error saving gold standard: {e}")
+            return {
+                "success": False,
+                "message": f"Error: {str(e)}"
+            }
+
+
+# Singleton instance
+agent6_service = Agent6VeoPrompter()
+
+
+# DATEI: backend/app/agents/agent_8_refiner/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_8_refiner/service.py --------------------
+"""
+Agent 8: QC Refiner - "The Quality Controller"
+Validates and auto-corrects video prompts for Veo and Runway
+"""
+
+from typing import Optional, Dict, Any, List
+from app.infrastructure.database.google_sheet_service import (
+    google_sheet_service,
+    SHEET_A5_STYLE_DATABASE
+)
+from app.utils.logger import setup_logger
+import re
+
+logger = setup_logger("Agent8_QCRefiner")
+
+
+class Agent8QCRefiner:
+    """Singleton service for prompt validation and auto-correction"""
+
+    _instance: Optional['Agent8QCRefiner'] = None
+    _negative_keywords_cache: Optional[List[str]] = None
+
+    # Platform-specific limits
+    MAX_LENGTH_VEO = 500
+    MAX_LENGTH_RUNWAY = 300
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def validate_prompt(
+        self,
+        prompt_dict: Dict[str, Any],
+        style: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Validate and auto-correct a video prompt
+
+        Args:
+            prompt_dict: Prompt dict with 'prompt', 'model', 'negative', 'scene_id'
+            style: Style dict with 'name', 'suffix', 'negative' (optional)
+
+        Returns:
+            Dict with:
+            - status: "valid", "corrected", or "error"
+            - prompt: Original or corrected prompt text
+            - negative: Negative prompt
+            - model: Model type
+            - scene_id: Scene ID
+            - issues_found: List of issues detected
+            - corrections_made: List of corrections applied
+        """
+        logger.info(f"Validating prompt for model '{prompt_dict.get('model', 'unknown')}'")
+
+        issues_found = []
+        corrections_made = []
+        prompt_text = prompt_dict.get("prompt", "")
+        model = prompt_dict.get("model", "veo").lower()
+        negative_prompt = prompt_dict.get("negative", "")
+
+        # Issue 1: Check length limits
+        max_length = self.MAX_LENGTH_VEO if model == "veo" else self.MAX_LENGTH_RUNWAY
+        if len(prompt_text) > max_length:
+            issues_found.append(f"Prompt too long ({len(prompt_text)} chars, max {max_length})")
+            prompt_text = prompt_text[:max_length - 3] + "..."
+            corrections_made.append(f"Trimmed to {max_length} characters")
+            logger.warning(f"Trimmed prompt from {len(prompt_dict.get('prompt', ''))} to {max_length} chars")
+
+        # Issue 2: Check for negative/forbidden keywords from style
+        if style and style.get("negative"):
+            forbidden_words = await self._extract_forbidden_keywords(style.get("negative", ""))
+
+            for word in forbidden_words:
+                # Case-insensitive search
+                pattern = re.compile(re.escape(word), re.IGNORECASE)
+                if pattern.search(prompt_text):
+                    issues_found.append(f"Contains forbidden keyword: '{word}'")
+                    # Remove the word (with surrounding spaces cleaned up)
+                    prompt_text = pattern.sub("", prompt_text)
+                    # Clean up multiple spaces
+                    prompt_text = re.sub(r'\s+', ' ', prompt_text).strip()
+                    # Clean up orphaned commas
+                    prompt_text = re.sub(r',\s*,', ',', prompt_text)
+                    prompt_text = re.sub(r'^\s*,|,\s*$', '', prompt_text).strip()
+                    corrections_made.append(f"Removed forbidden keyword: '{word}'")
+                    logger.info(f"Removed forbidden keyword: '{word}'")
+
+        # Issue 3: Basic quality checks
+        if len(prompt_text.strip()) < 20:
+            issues_found.append("Prompt too short (less than 20 characters)")
+            logger.error("Prompt is too short after corrections")
+
+        # Issue 4: Check for common prompt anti-patterns
+        antipatterns = [
+            (r'\b(ugly|bad|worst|horrible)\b', "negative descriptors"),
+            (r'\b(NSFW|nude|naked)\b', "inappropriate content"),
+        ]
+
+        for pattern, description in antipatterns:
+            if re.search(pattern, prompt_text, re.IGNORECASE):
+                issues_found.append(f"Contains {description}")
+                prompt_text = re.sub(pattern, "", prompt_text, flags=re.IGNORECASE)
+                prompt_text = re.sub(r'\s+', ' ', prompt_text).strip()
+                corrections_made.append(f"Removed {description}")
+                logger.info(f"Removed {description}")
+
+        # Determine status
+        if len(issues_found) == 0:
+            status = "valid"
+            logger.info("✅ Prompt passed all validation checks")
+        elif len(corrections_made) > 0 and len(prompt_text.strip()) >= 20:
+            status = "corrected"
+            logger.info(f"⚠️ Prompt corrected ({len(corrections_made)} fixes applied)")
+        else:
+            status = "error"
+            logger.error(f"❌ Prompt validation failed with {len(issues_found)} critical issues")
+
+        return {
+            "status": status,
+            "prompt": prompt_text,
+            "negative": negative_prompt,
+            "model": model,
+            "scene_id": prompt_dict.get("scene_id"),
+            "duration": prompt_dict.get("duration"),
+            "issues_found": issues_found,
+            "corrections_made": corrections_made
+        }
+
+    async def validate_batch(
+        self,
+        prompts: List[Dict[str, Any]],
+        style: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Validate multiple prompts at once
+
+        Args:
+            prompts: List of prompt dicts
+            style: Style dict (optional)
+
+        Returns:
+            Dict with:
+            - total: Total prompts processed
+            - valid: Number of valid prompts
+            - corrected: Number of corrected prompts
+            - errors: Number of failed prompts
+            - results: List of validated prompt dicts
+        """
+        logger.info(f"Batch validating {len(prompts)} prompts")
+
+        results = []
+        stats = {"valid": 0, "corrected": 0, "errors": 0}
+
+        for prompt_dict in prompts:
+            validated = await self.validate_prompt(prompt_dict, style)
+            results.append(validated)
+
+            # Update stats
+            stats[validated["status"]] = stats.get(validated["status"], 0) + 1
+
+        logger.info(f"Batch validation complete: {stats['valid']} valid, {stats['corrected']} corrected, {stats['errors']} errors")
+
+        return {
+            "total": len(prompts),
+            "valid": stats["valid"],
+            "corrected": stats["corrected"],
+            "errors": stats["errors"],
+            "results": results
+        }
+
+    async def _extract_forbidden_keywords(self, negative_prompt: str) -> List[str]:
+        """
+        Extract individual forbidden keywords from negative prompt string
+
+        Args:
+            negative_prompt: Comma or space-separated negative keywords
+
+        Returns:
+            List of forbidden keywords
+        """
+        if not negative_prompt:
+            return []
+
+        # Split by commas and clean up
+        keywords = [
+            keyword.strip()
+            for keyword in negative_prompt.replace(",", " ").split()
+            if keyword.strip() and len(keyword.strip()) > 2  # Ignore very short words
+        ]
+
+        return keywords
+
+    async def get_style_negative_keywords(self, style_name: str) -> List[str]:
+        """
+        Get negative keywords for a specific style from A5_Style_Database
+
+        Args:
+            style_name: Name of the style
+
+        Returns:
+            List of negative keywords
+        """
+        try:
+            records = await google_sheet_service.get_all_records(SHEET_A5_STYLE_DATABASE)
+
+            for record in records:
+                if record.get("name") == style_name:
+                    negative = record.get("negative", "")
+                    return await self._extract_forbidden_keywords(negative)
+
+        except Exception as e:
+            logger.warning(f"Could not load style negative keywords: {e}")
+
+        return []
+
+
+# Singleton instance
+agent8_service = Agent8QCRefiner()
+
+
+# DATEI: backend/app/agents/agent_3_audio_analyzer/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_3_audio_analyzer/service.py --------------------
+"""
+Agent 3: Audio Analyzer with Smart Scene Splitting
+Analyzes audio files for structure, energy, and automatically splits into 8s chunks
+"""
+
+from typing import Optional, List, Dict, Any
+from pydub import AudioSegment
+from pydub.utils import make_chunks
+import numpy as np
+from app.models.data_models import AudioAnalysis
+from app.infrastructure.database.google_sheet_service import google_sheet_service, SHEET_A3_AUDIO_ANALYSIS
+from app.utils.logger import setup_logger
+import io
+
+logger = setup_logger("Agent3_AudioAnalyzer")
+
+
+class Agent3AudioAnalyzer:
+    """Singleton service for audio analysis with smart scene splitting"""
+
+    _instance: Optional['Agent3AudioAnalyzer'] = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def analyze_audio_file(
+        self,
+        audio_file_bytes: bytes,
+        filename: str,
+        project_id: Optional[str] = None,
+        max_scene_duration: float = 8.0
+    ) -> Dict[str, Any]:
+        """
+        Analyze audio file and create smart scene breakdown
+
+        Args:
+            audio_file_bytes: Audio file content (WAV/MP3)
+            filename: Original filename
+            project_id: Optional project ID
+            max_scene_duration: Maximum duration per scene (default: 8.0s for Veo/Runway)
+
+        Returns:
+            Dict with scenes, energy_profile, bpm, duration, etc.
+        """
+        logger.info(f"Analyzing audio: {filename}")
+
+        try:
+            # Load audio file
+            audio_segment = AudioSegment.from_file(io.BytesIO(audio_file_bytes))
+
+            # Convert to mono for analysis
+            if audio_segment.channels > 1:
+                audio_segment = audio_segment.set_channels(1)
+
+            # Get basic properties
+            duration = len(audio_segment) / 1000.0  # Convert ms to seconds
+            sample_rate = audio_segment.frame_rate
+
+            logger.info(f"Audio loaded: {duration:.2f}s @ {sample_rate}Hz")
+
+            # Analyze energy over time
+            energy_profile = self._analyze_energy(audio_segment)
+
+            # Detect sections (Intro, Verse, Chorus) based on energy changes
+            sections = self._detect_sections(energy_profile, duration)
+
+            # Smart split sections into 8s chunks (Veo/Runway limit)
+            scenes = self._smart_split(sections, max_scene_duration)
+
+            # Estimate BPM (simple peak detection)
+            bpm = self._estimate_bpm(audio_segment)
+
+            result = {
+                "filename": filename,
+                "duration": duration,
+                "bpm": bpm,
+                "scenes": scenes,
+                "energy_profile": energy_profile,
+                "total_scenes": len(scenes),
+                "project_id": project_id
+            }
+
+            logger.info(f"✅ Analysis complete: {len(scenes)} scenes created")
+            return result
+
+        except Exception as e:
+            logger.error(f"Audio analysis failed: {e}")
+            raise
+
+    def _analyze_energy(self, audio_segment: AudioSegment, chunk_size_ms: int = 500) -> List[Dict[str, float]]:
+        """
+        Analyze RMS energy over time
+
+        Args:
+            audio_segment: Audio to analyze
+            chunk_size_ms: Size of analysis windows (default: 500ms)
+
+        Returns:
+            List of {time, energy} dictionaries
+        """
+        chunks = make_chunks(audio_segment, chunk_size_ms)
+        energy_profile = []
+
+        for i, chunk in enumerate(chunks):
+            time = (i * chunk_size_ms) / 1000.0  # Convert to seconds
+
+            # Calculate RMS energy
+            samples = np.array(chunk.get_array_of_samples())
+            rms = np.sqrt(np.mean(samples**2))
+
+            # Normalize to 0-1 range (approximate)
+            normalized_energy = min(1.0, rms / 5000.0)
+
+            energy_profile.append({
+                "time": time,
+                "energy": normalized_energy
+            })
+
+        return energy_profile
+
+    def _detect_sections(self, energy_profile: List[Dict[str, float]], total_duration: float) -> List[Dict[str, Any]]:
+        """
+        Detect song sections (Intro, Verse, Chorus) based on energy changes
+
+        Args:
+            energy_profile: Energy over time
+            total_duration: Total audio duration
+
+        Returns:
+            List of section dictionaries
+        """
+        sections = []
+
+        if not energy_profile:
+            return sections
+
+        # Simple heuristic: Detect energy level changes
+        # Low energy -> Intro/Verse
+        # High energy -> Chorus
+        # Very low -> Outro
+
+        energies = [e["energy"] for e in energy_profile]
+        avg_energy = np.mean(energies)
+        high_threshold = avg_energy * 1.2
+        low_threshold = avg_energy * 0.8
+
+        current_section = None
+        section_start = 0.0
+
+        for i, point in enumerate(energy_profile):
+            time = point["time"]
+            energy = point["energy"]
+
+            # Determine section type
+            if energy > high_threshold:
+                section_type = "Chorus"
+            elif energy < low_threshold:
+                section_type = "Verse" if time < total_duration * 0.9 else "Outro"
+            else:
+                section_type = "Intro" if time < total_duration * 0.15 else "Verse"
+
+            # Detect section changes
+            if current_section != section_type:
+                # Save previous section
+                if current_section is not None:
+                    sections.append({
+                        "type": current_section,
+                        "start": section_start,
+                        "end": time,
+                        "avg_energy": np.mean([e["energy"] for e in energy_profile
+                                              if section_start <= e["time"] < time])
+                    })
+
+                # Start new section
+                current_section = section_type
+                section_start = time
+
+        # Add final section
+        if current_section is not None:
+            sections.append({
+                "type": current_section,
+                "start": section_start,
+                "end": total_duration,
+                "avg_energy": np.mean([e["energy"] for e in energy_profile
+                                      if section_start <= e["time"]])
+            })
+
+        logger.info(f"Detected {len(sections)} sections")
+        return sections
+
+    def _smart_split(self, sections: List[Dict[str, Any]], max_duration: float = 8.0) -> List[Dict[str, Any]]:
+        """
+        Smart split sections into scenes (max 8s each for Veo/Runway)
+
+        Args:
+            sections: Detected song sections
+            max_duration: Maximum scene duration (default: 8.0s)
+
+        Returns:
+            List of scene dictionaries with id, start, end, energy, type
+        """
+        scenes = []
+        scene_id = 1
+
+        for section in sections:
+            section_duration = section["end"] - section["start"]
+
+            if section_duration <= max_duration:
+                # Section fits in one scene
+                scenes.append({
+                    "id": scene_id,
+                    "start": round(section["start"], 2),
+                    "end": round(section["end"], 2),
+                    "duration": round(section_duration, 2),
+                    "energy": self._classify_energy(section["avg_energy"]),
+                    "type": section["type"]
+                })
+                scene_id += 1
+            else:
+                # Split into multiple scenes
+                num_chunks = int(np.ceil(section_duration / max_duration))
+                chunk_duration = section_duration / num_chunks
+
+                for i in range(num_chunks):
+                    chunk_start = section["start"] + (i * chunk_duration)
+                    chunk_end = min(chunk_start + chunk_duration, section["end"])
+
+                    scenes.append({
+                        "id": scene_id,
+                        "start": round(chunk_start, 2),
+                        "end": round(chunk_end, 2),
+                        "duration": round(chunk_end - chunk_start, 2),
+                        "energy": self._classify_energy(section["avg_energy"]),
+                        "type": f"{section['type']} (Part {i+1}/{num_chunks})"
+                    })
+                    scene_id += 1
+
+        logger.info(f"Created {len(scenes)} scenes (max {max_duration}s each)")
+        return scenes
+
+    def _classify_energy(self, energy: float) -> str:
+        """Classify energy level as Low/Medium/High"""
+        if energy < 0.4:
+            return "Low"
+        elif energy < 0.7:
+            return "Medium"
+        else:
+            return "High"
+
+    def _estimate_bpm(self, audio_segment: AudioSegment) -> int:
+        """
+        Estimate BPM using simple peak detection
+
+        Args:
+            audio_segment: Audio to analyze
+
+        Returns:
+            Estimated BPM (default: 120 if detection fails)
+        """
+        try:
+            # Simple implementation - analyze first 30 seconds
+            sample_segment = audio_segment[:30000]  # First 30s
+            samples = np.array(sample_segment.get_array_of_samples())
+
+            # Find peaks in energy
+            from scipy.signal import find_peaks
+
+            # Low-pass filter to focus on beat range
+            peaks, _ = find_peaks(np.abs(samples), distance=int(sample_segment.frame_rate * 0.3))
+
+            if len(peaks) > 10:
+                # Calculate average time between peaks
+                peak_times = peaks / sample_segment.frame_rate
+                intervals = np.diff(peak_times)
+                avg_interval = np.median(intervals)
+
+                # Convert to BPM
+                bpm = int(60 / avg_interval) if avg_interval > 0 else 120
+                bpm = min(180, max(60, bpm))  # Clamp to reasonable range
+
+                logger.info(f"Estimated BPM: {bpm}")
+                return bpm
+
+        except Exception as e:
+            logger.warning(f"BPM estimation failed: {e}")
+
+        return 120  # Default fallback
+
+    async def analyze_audio(self, project_id: str, filename: str) -> AudioAnalysis:
+        """
+        Legacy method for backward compatibility
+
+        Note: This method is deprecated. Use analyze_audio_file() instead.
+        """
+        logger.warning("Using deprecated analyze_audio method")
+
+        # Simulate analysis for backward compatibility
+        analysis = AudioAnalysis(
+            project_id=project_id,
+            filename=filename,
+            duration=180.0,
+            bpm=120,
+            key="C minor",
+            structure=["Intro", "Verse 1", "Chorus", "Verse 2", "Chorus", "Bridge", "Chorus", "Outro"],
+            peak_moments=[15.0, 45.0, 90.0, 135.0, 165.0],
+            energy_profile=[
+                {"time": 0.0, "energy": 0.3},
+                {"time": 15.0, "energy": 0.7},
+                {"time": 45.0, "energy": 0.9},
+                {"time": 90.0, "energy": 0.6},
+                {"time": 135.0, "energy": 0.95},
+                {"time": 180.0, "energy": 0.2}
+            ]
+        )
+
+        await self._save_to_sheets(analysis)
+        return analysis
+
+    async def get_analysis(self, project_id: str) -> Optional[AudioAnalysis]:
+        """Get audio analysis for a project"""
+        record = await google_sheet_service.find_record(
+            SHEET_A3_AUDIO_ANALYSIS,
+            "project_id",
+            project_id
+        )
+
+        if record:
+            return AudioAnalysis(**record)
+        return None
+
+    async def _save_to_sheets(self, analysis: AudioAnalysis) -> bool:
+        """Save audio analysis to Google Sheets"""
+        data = [
+            analysis.id,
+            analysis.project_id,
+            analysis.filename,
+            analysis.duration,
+            analysis.bpm,
+            analysis.key,
+            ", ".join(analysis.structure),
+            ", ".join(map(str, analysis.peak_moments)),
+            analysis.analyzed_at.isoformat()
+        ]
+
+        return await google_sheet_service.append_row(SHEET_A3_AUDIO_ANALYSIS, data)
+
+
+# Singleton instance
+agent3_service = Agent3AudioAnalyzer()
+
+
+# DATEI: backend/app/agents/suno_prompt_generator/__init__.py --------------------
+# Suno Prompt Generator Agent with Dynamic Few-Shot Learning
+
+
+# DATEI: backend/app/agents/suno_prompt_generator/service.py --------------------
+"""
+Suno Prompt Generator Service - Dynamic Few-Shot Learning
+Generates Suno v5 prompts using in-context learning from best practices
+"""
+
+import random
+from typing import Optional, List
+from datetime import datetime, timedelta
+
+from app.models.data_models import (
+    SunoPromptRequest,
+    SunoPromptResponse,
+    SunoPromptExample,
+    FewShotLearningStats
+)
+from app.infrastructure.external_services.gemini_service import gemini_service
+from app.infrastructure.database.google_sheet_service import (
+    google_sheet_service,
+    SHEET_SUNO_PROMPTS,
+    SHEET_APPROVED_BEST_PRACTICES
+)
+from app.utils.logger import setup_logger
+
+logger = setup_logger("SunoPromptGenerator")
+
+
+class SunoPromptGeneratorService:
+    """
+    Singleton service for Suno prompt generation with Dynamic Few-Shot Learning
+
+    Key Concept: Instead of training a model, we dynamically inject best practice
+    examples into the prompt context. The system "learns" by accumulating excellent
+    examples in the ApprovedBestPractices sheet.
+    """
+
+    _instance: Optional['SunoPromptGeneratorService'] = None
+
+    # Fallback examples if sheet is empty (seed knowledge)
+    FALLBACK_EXAMPLES = [
+        SunoPromptExample(
+            prompt_text="[Verse]\nNeon lights paint the night in electric blue\nCity pulse beats fast beneath my worn-out shoes\nChasing dreams through concrete canyons deep and wide\nLost souls dance together in the urban tide",
+            genre="Electronic Pop",
+            quality_score=8.5,
+            tags=["urban", "energetic", "modern"],
+            source="seed"
+        ),
+        SunoPromptExample(
+            prompt_text="[Chorus]\nThunder rolling over distant mountains high\nRaindrops falling like tears from the sky\nNature's symphony in perfect harmony\nEchoes of forever in this melody",
+            genre="Folk",
+            quality_score=8.0,
+            tags=["nature", "atmospheric", "emotional"],
+            source="seed"
+        ),
+        SunoPromptExample(
+            prompt_text="[Bridge]\nBass drops heavy like my heart tonight\nSynths cutting through the darkness bright\nLost in rhythm, found in sound\nWhere broken pieces can be found",
+            genre="EDM",
+            quality_score=9.0,
+            tags=["intense", "dynamic", "powerful"],
+            source="seed"
+        )
+    ]
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def generate_prompt(self, request: SunoPromptRequest) -> SunoPromptResponse:
+        """
+        Generate Suno prompt using Few-Shot Learning
+
+        Process:
+        1. Fetch 3-5 best practice examples from ApprovedBestPractices sheet
+        2. Inject these examples into the system prompt
+        3. Ask Gemini to generate a new prompt following these patterns
+        4. Return the generated prompt (pending QC)
+        """
+        logger.info(f"Generating Suno prompt for genre: {request.target_genre}")
+
+        # Step 1: Get Few-Shot examples
+        examples = await self._get_few_shot_examples(
+            target_genre=request.target_genre,
+            num_examples=5
+        )
+
+        # Step 2: Build enhanced system prompt with examples
+        system_prompt = self._build_few_shot_prompt(examples, request)
+
+        # Step 3: Generate with Gemini
+        try:
+            generated_text = await gemini_service.generate_text(
+                system_prompt,
+                temperature=0.8,  # Higher creativity for artistic content
+                max_tokens=1024
+            )
+
+            # Step 4: Create response
+            response = SunoPromptResponse(
+                prompt_text=generated_text.strip(),
+                genre=request.target_genre,
+                mood=request.mood,
+                tempo=request.tempo,
+                few_shot_examples_used=len(examples),
+                status="PENDING_QC"
+            )
+
+            # Step 5: Save to Suno_Prompts_DB
+            await self._save_to_sheets(response)
+
+            logger.info(f"Generated prompt {response.id} using {len(examples)} examples")
+            return response
+
+        except Exception as e:
+            logger.error(f"Failed to generate Suno prompt: {e}")
+            raise
+
+    async def _get_few_shot_examples(
+        self,
+        target_genre: Optional[str] = None,
+        num_examples: int = 5
+    ) -> List[SunoPromptExample]:
+        """
+        Retrieve Few-Shot Learning examples from ApprovedBestPractices sheet
+
+        Selection Strategy:
+        1. Prefer examples with quality_score >= 8.0
+        2. Prefer examples from the same genre (if specified)
+        3. Include some cross-genre examples for creativity
+        4. Randomize to avoid overfitting
+        """
+        try:
+            # Get all approved examples from sheet
+            records = await google_sheet_service.get_all_records(SHEET_APPROVED_BEST_PRACTICES)
+
+            if not records:
+                logger.warning("ApprovedBestPractices sheet is empty, using fallback examples")
+                return self.FALLBACK_EXAMPLES[:num_examples]
+
+            # Parse records into SunoPromptExample objects
+            examples = []
+            for record in records:
+                try:
+                    example = SunoPromptExample(
+                        id=record.get("id", ""),
+                        prompt_text=record.get("prompt_text", ""),
+                        genre=record.get("genre", ""),
+                        quality_score=float(record.get("quality_score", 0)),
+                        tags=record.get("tags", "").split(",") if record.get("tags") else [],
+                        created_at=datetime.fromisoformat(record.get("created_at", datetime.utcnow().isoformat())),
+                        source=record.get("source", "generated")
+                    )
+
+                    # Only include high-quality examples
+                    if example.quality_score >= 8.0:
+                        examples.append(example)
+                except Exception as e:
+                    logger.warning(f"Failed to parse example: {e}")
+                    continue
+
+            if not examples:
+                logger.warning("No high-quality examples found, using fallback")
+                return self.FALLBACK_EXAMPLES[:num_examples]
+
+            # Selection strategy
+            selected = []
+
+            # 1. Prefer same genre (60% of examples)
+            if target_genre:
+                same_genre = [ex for ex in examples if ex.genre.lower() == target_genre.lower()]
+                genre_count = int(num_examples * 0.6)
+                if same_genre:
+                    selected.extend(random.sample(same_genre, min(genre_count, len(same_genre))))
+
+            # 2. Fill remaining with diverse examples (40% for creativity)
+            remaining_count = num_examples - len(selected)
+            if remaining_count > 0:
+                other_examples = [ex for ex in examples if ex not in selected]
+                if other_examples:
+                    selected.extend(random.sample(other_examples, min(remaining_count, len(other_examples))))
+
+            # 3. If still not enough, use fallback
+            if len(selected) < num_examples:
+                fallback_needed = num_examples - len(selected)
+                selected.extend(self.FALLBACK_EXAMPLES[:fallback_needed])
+
+            logger.info(f"Selected {len(selected)} Few-Shot examples (target genre: {target_genre})")
+            return selected[:num_examples]
+
+        except Exception as e:
+            logger.error(f"Failed to get Few-Shot examples: {e}")
+            return self.FALLBACK_EXAMPLES[:num_examples]
+
+    def _build_few_shot_prompt(
+        self,
+        examples: List[SunoPromptExample],
+        request: SunoPromptRequest
+    ) -> str:
+        """
+        Build the Few-Shot Learning prompt for Gemini
+
+        Structure:
+        1. System role definition
+        2. Few-Shot examples (the "learning" part)
+        3. Task specification
+        4. Output format instructions
+        """
+        # Format examples
+        examples_text = "\n\n".join([
+            f"EXAMPLE {i+1} (Genre: {ex.genre}, Quality: {ex.quality_score}/10):\n{ex.prompt_text}"
+            for i, ex in enumerate(examples)
+        ])
+
+        # Build additional context
+        context_parts = []
+        if request.mood:
+            context_parts.append(f"Mood: {request.mood}")
+        if request.tempo:
+            context_parts.append(f"Tempo: {request.tempo}")
+        if request.style_references:
+            context_parts.append(f"Style References: {', '.join(request.style_references)}")
+        if request.additional_instructions:
+            context_parts.append(f"Additional: {request.additional_instructions}")
+
+        context = "\n".join(context_parts) if context_parts else "Creative freedom encouraged"
+
+        # The Few-Shot prompt
+        prompt = f"""You are an expert Suno v5 prompt engineer specializing in creating engaging, high-quality music prompts.
+
+**LEARN FROM THESE BEST PRACTICE EXAMPLES:**
+
+{examples_text}
+
+---
+
+**YOUR TASK:**
+Generate a NEW Suno v5 prompt for the following requirements:
+
+Genre: {request.target_genre}
+{context}
+
+**QUALITY STANDARDS (learned from examples above):**
+1. Use clear structure markers ([Verse], [Chorus], [Bridge])
+2. Create vivid, sensory imagery
+3. Maintain consistent theme and emotion
+4. Use poetic but accessible language
+5. Include dynamic contrast between sections
+6. Keep lines concise and rhythmic
+
+**OUTPUT:**
+Generate ONLY the prompt text (with structure markers). Make it unique while following the quality patterns from the examples.
+
+Prompt:"""
+
+        return prompt
+
+    async def _save_to_sheets(self, response: SunoPromptResponse) -> bool:
+        """Save generated prompt to Suno_Prompts_DB"""
+        data = [
+            response.id,
+            response.prompt_text[:500],  # Truncate for sheet
+            response.genre,
+            response.mood or "",
+            response.tempo or "",
+            response.few_shot_examples_used,
+            response.quality_score or 0,
+            response.status,
+            response.created_at.isoformat()
+        ]
+
+        return await google_sheet_service.append_row(SHEET_SUNO_PROMPTS, data)
+
+    async def get_learning_stats(self) -> FewShotLearningStats:
+        """
+        Get statistics about the Few-Shot Learning system
+        Shows how the system is "learning" over time
+        """
+        try:
+            records = await google_sheet_service.get_all_records(SHEET_APPROVED_BEST_PRACTICES)
+
+            if not records:
+                return FewShotLearningStats(
+                    total_examples=len(self.FALLBACK_EXAMPLES),
+                    avg_quality_score=8.5,
+                    examples_by_genre={"Seed Examples": len(self.FALLBACK_EXAMPLES)},
+                    recent_additions=0,
+                    top_performing_genres=["Electronic Pop", "Folk", "EDM"]
+                )
+
+            # Calculate stats
+            total = len(records)
+            scores = [float(r.get("quality_score", 0)) for r in records]
+            avg_score = sum(scores) / len(scores) if scores else 0
+
+            # By genre
+            by_genre = {}
+            for r in records:
+                genre = r.get("genre", "Unknown")
+                by_genre[genre] = by_genre.get(genre, 0) + 1
+
+            # Recent additions (last 24h)
+            recent_count = 0
+            cutoff = datetime.utcnow() - timedelta(hours=24)
+            for r in records:
+                try:
+                    created = datetime.fromisoformat(r.get("created_at", ""))
+                    if created > cutoff:
+                        recent_count += 1
+                except:
+                    pass
+
+            # Top performing
+            top_genres = sorted(by_genre.items(), key=lambda x: x[1], reverse=True)[:5]
+
+            return FewShotLearningStats(
+                total_examples=total,
+                avg_quality_score=round(avg_score, 2),
+                examples_by_genre=by_genre,
+                recent_additions=recent_count,
+                top_performing_genres=[g[0] for g in top_genres]
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to get learning stats: {e}")
+            raise
+
+
+# Singleton instance
+suno_generator_service = SunoPromptGeneratorService()
+
+
+# DATEI: backend/app/agents/agent_14_narrator/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_14_narrator/service.py --------------------
+"""
+Agent 14: Narrator (Voiceover Service)
+
+Prepares voiceover scripts for documentary narration.
+Supports hybrid workflow: API automation (ElevenLabs) or manual download.
+"""
+
+import logging
+from typing import Dict, Any, List, Optional
+from datetime import datetime
+import os
+import tempfile
+
+logger = logging.getLogger(__name__)
+
+
+class NarratorService:
+    """Agent 14: Voiceover preparation with hybrid mode support"""
+
+    def __init__(self):
+        self.elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+        logger.info("Agent 14 (Narrator) initialized")
+
+    async def prepare_voiceover_script(
+        self,
+        script: Dict[str, Any],
+        mode: str = "manual",
+        voice_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Prepare voiceover from documentary script
+
+        Args:
+            script: Complete script from Agent 13
+            mode: "manual" (download text) or "api" (ElevenLabs)
+            voice_id: ElevenLabs voice ID (for API mode)
+
+        Returns:
+            {
+                "success": bool,
+                "mode": str,
+                "script_text": str,  # For manual download
+                "audio_url": str,    # For API mode (future)
+                "duration_estimate": float,  # Estimated minutes
+                "word_count": int
+            }
+        """
+        try:
+            # Extract narration text from all chapters
+            script_text = self._extract_narration_text(script)
+
+            # Calculate duration estimate (average speaking rate: 150 WPM)
+            word_count = len(script_text.split())
+            duration_minutes = word_count / 150
+
+            if mode == "manual":
+                # Manual mode: Create clean text file for download
+                result = {
+                    "success": True,
+                    "mode": "manual",
+                    "script_text": script_text,
+                    "duration_estimate": round(duration_minutes, 1),
+                    "word_count": word_count,
+                    "instructions": self._get_manual_instructions()
+                }
+                logger.info(f"Voiceover script prepared (Manual mode): {word_count} words, ~{duration_minutes:.1f} min")
+                return result
+
+            elif mode == "api":
+                # API mode: Call ElevenLabs (mockup for now)
+                if not self.elevenlabs_api_key:
+                    logger.warning("ElevenLabs API key not configured, falling back to manual mode")
+                    return await self.prepare_voiceover_script(script, mode="manual")
+
+                # Future: Call ElevenLabs API
+                audio_url = await self._generate_with_elevenlabs(script_text, voice_id)
+
+                result = {
+                    "success": True,
+                    "mode": "api",
+                    "audio_url": audio_url,
+                    "duration_estimate": round(duration_minutes, 1),
+                    "word_count": word_count,
+                    "script_text": script_text  # Include text as backup
+                }
+                logger.info(f"Voiceover generated via API: {word_count} words")
+                return result
+
+            else:
+                raise ValueError(f"Invalid mode: {mode}. Use 'manual' or 'api'")
+
+        except Exception as e:
+            logger.error(f"Error preparing voiceover: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "mode": mode
+            }
+
+    def _extract_narration_text(self, script: Dict[str, Any]) -> str:
+        """Extract clean narration text from script structure"""
+        narration_parts = []
+
+        # Add title and logline as intro context
+        if "title" in script:
+            narration_parts.append(f"# {script['title']}\n")
+
+        # Extract narration from each chapter
+        if "chapters" in script:
+            for chapter in script["chapters"]:
+                chapter_num = chapter.get("chapter_number", "")
+                chapter_title = chapter.get("title", "")
+                narration = chapter.get("narration", "")
+
+                # Format chapter header
+                if chapter_title:
+                    narration_parts.append(f"\n## Chapter {chapter_num}: {chapter_title}\n")
+
+                # Add narration text
+                if narration:
+                    narration_parts.append(narration.strip())
+
+        return "\n\n".join(narration_parts)
+
+    def _get_manual_instructions(self) -> str:
+        """Get instructions for manual ElevenLabs workflow"""
+        return """
+**Manual Voiceover Workflow:**
+
+1. **Download** the script text below
+2. **Go to** https://elevenlabs.io
+3. **Select** a professional narrator voice (recommended: "Josh" or "Bella")
+4. **Paste** the script into the text input
+5. **Generate** the audio
+6. **Download** the MP3 file
+7. **Upload** the finished MP3 back to this interface
+
+**Settings Recommendation:**
+- Stability: 50-60%
+- Clarity: 70-80%
+- Style Exaggeration: 0-10%
+        """.strip()
+
+    async def _generate_with_elevenlabs(
+        self,
+        text: str,
+        voice_id: Optional[str] = None
+    ) -> str:
+        """
+        Generate voiceover using ElevenLabs API
+
+        NOTE: This is a mockup implementation for future API integration
+        """
+        # TODO: Implement actual ElevenLabs API call
+        # For now, return a placeholder
+        logger.info("ElevenLabs API call (mockup) - Future implementation")
+
+        # Mockup return
+        return "https://api.elevenlabs.io/mockup/audio.mp3"
+
+    async def analyze_uploaded_audio(
+        self,
+        audio_file_path: str
+    ) -> Dict[str, Any]:
+        """
+        Analyze uploaded voiceover audio
+
+        Args:
+            audio_file_path: Path to uploaded MP3/WAV file
+
+        Returns:
+            {
+                "success": bool,
+                "duration": float,  # seconds
+                "sample_rate": int,
+                "channels": int,
+                "file_size_mb": float
+            }
+        """
+        try:
+            # Get file size
+            file_size = os.path.getsize(audio_file_path)
+            file_size_mb = file_size / (1024 * 1024)
+
+            # Basic analysis (future: use librosa or pydub for detailed analysis)
+            result = {
+                "success": True,
+                "file_path": audio_file_path,
+                "file_size_mb": round(file_size_mb, 2),
+                "format": os.path.splitext(audio_file_path)[1],
+                "message": "Audio file uploaded successfully"
+            }
+
+            logger.info(f"Audio analyzed: {file_size_mb:.2f} MB")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error analyzing audio: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+
+# Singleton instance
+narrator_service = NarratorService()
+
+
+# DATEI: backend/app/agents/agent_15_fact_checker/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_15_fact_checker/service.py --------------------
+"""
+Agent 15: Fact Checker
+
+Verifies factual claims in documentary scripts using AI and web search.
+Uses Gemini with Google Search Grounding to validate statements.
+"""
+
+import logging
+from typing import Dict, Any, List, Optional
+import re
+from datetime import datetime
+
+from app.infrastructure.external_services.gemini_service import gemini_service
+
+logger = logging.getLogger(__name__)
+
+
+class FactCheckerService:
+    """Agent 15: AI-powered fact verification for documentary scripts"""
+
+    def __init__(self):
+        self.gemini = gemini_service
+        logger.info("Agent 15 (Fact Checker) initialized")
+
+    async def verify_facts(
+        self,
+        script: Dict[str, Any],
+        check_mode: str = "critical"
+    ) -> Dict[str, Any]:
+        """
+        Verify factual claims in documentary script
+
+        Args:
+            script: Complete script from Agent 13
+            check_mode: "critical" (numbers/dates/names) or "full" (all claims)
+
+        Returns:
+            {
+                "success": bool,
+                "fact_report": str,  # Markdown report
+                "issues_found": int,
+                "checks_performed": int,
+                "critical_issues": List[Dict],
+                "warnings": List[Dict],
+                "verified_claims": List[Dict]
+            }
+        """
+        try:
+            # Extract text from script
+            script_text = self._extract_script_text(script)
+
+            # Extract factual claims
+            claims = self._extract_claims(script_text, check_mode)
+
+            logger.info(f"Extracted {len(claims)} claims for fact-checking")
+
+            # Verify each claim
+            results = []
+            for claim in claims:
+                verification = await self._verify_claim(claim)
+                results.append(verification)
+
+            # Generate fact report
+            fact_report = self._generate_fact_report(results, script.get("title", "Documentary"))
+
+            # Count issues
+            critical_issues = [r for r in results if r["status"] == "false"]
+            warnings = [r for r in results if r["status"] == "uncertain"]
+            verified = [r for r in results if r["status"] == "verified"]
+
+            return {
+                "success": True,
+                "fact_report": fact_report,
+                "issues_found": len(critical_issues),
+                "checks_performed": len(results),
+                "critical_issues": critical_issues,
+                "warnings": warnings,
+                "verified_claims": verified,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"Error during fact-checking: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "fact_report": f"⚠️ **Error during fact-checking:** {str(e)}"
+            }
+
+    def _extract_script_text(self, script: Dict[str, Any]) -> str:
+        """Extract all narration text from script"""
+        text_parts = []
+
+        if "chapters" in script:
+            for chapter in script["chapters"]:
+                narration = chapter.get("narration", "")
+                if narration:
+                    text_parts.append(narration)
+
+        return "\n\n".join(text_parts)
+
+    def _extract_claims(self, text: str, check_mode: str) -> List[str]:
+        """
+        Extract factual claims from text
+
+        Critical mode: Focus on numbers, dates, names, statistics
+        Full mode: Extract all factual statements
+        """
+        # Split into sentences
+        sentences = re.split(r'[.!?]+', text)
+        claims = []
+
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+
+            if check_mode == "critical":
+                # Look for sentences with numbers, dates, or specific names
+                if self._contains_verifiable_fact(sentence):
+                    claims.append(sentence)
+            else:
+                # Full mode: check all statements
+                if len(sentence.split()) > 5:  # Only meaningful sentences
+                    claims.append(sentence)
+
+        return claims[:20]  # Limit to 20 claims to avoid excessive API calls
+
+    def _contains_verifiable_fact(self, sentence: str) -> bool:
+        """Check if sentence contains verifiable facts (numbers, dates, etc.)"""
+        patterns = [
+            r'\d{4}',  # Years
+            r'\d+%',  # Percentages
+            r'\d+\s*(million|billion|thousand)',  # Large numbers
+            r'(January|February|March|April|May|June|July|August|September|October|November|December)',  # Dates
+            r'\$\d+',  # Money
+            r'\d+\s*(km|miles|meters|feet)',  # Measurements
+        ]
+
+        for pattern in patterns:
+            if re.search(pattern, sentence, re.IGNORECASE):
+                return True
+
+        return False
+
+    async def _verify_claim(self, claim: str) -> Dict[str, Any]:
+        """
+        Verify a single claim using Gemini with Google Search
+
+        Returns:
+            {
+                "claim": str,
+                "status": "verified" | "false" | "uncertain",
+                "explanation": str,
+                "sources": List[str]
+            }
+        """
+        try:
+            # Build verification prompt
+            prompt = f"""You are a fact-checker for a documentary. Verify the following claim:
+
+CLAIM: "{claim}"
+
+Task:
+1. Use your knowledge and available search to verify this claim
+2. Determine if it is TRUE, FALSE, or UNCERTAIN
+3. Provide a brief explanation
+4. If possible, cite sources
+
+Response format:
+STATUS: [VERIFIED/FALSE/UNCERTAIN]
+EXPLANATION: [Brief explanation]
+SOURCES: [URLs or references if available]
+"""
+
+            # Call Gemini (with Google Search grounding if available)
+            response = await self.gemini.generate_text(
+                prompt=prompt,
+                temperature=0.2,  # Low temperature for factual accuracy
+                max_tokens=500
+            )
+
+            result = response.get("text", "")
+
+            # Parse response
+            status = self._parse_status(result)
+            explanation = self._parse_explanation(result)
+            sources = self._parse_sources(result)
+
+            return {
+                "claim": claim,
+                "status": status,
+                "explanation": explanation,
+                "sources": sources,
+                "raw_response": result
+            }
+
+        except Exception as e:
+            logger.error(f"Error verifying claim: {str(e)}")
+            return {
+                "claim": claim,
+                "status": "uncertain",
+                "explanation": f"Error during verification: {str(e)}",
+                "sources": []
+            }
+
+    def _parse_status(self, response: str) -> str:
+        """Parse verification status from AI response"""
+        response_lower = response.lower()
+
+        if "status: verified" in response_lower or "status: true" in response_lower:
+            return "verified"
+        elif "status: false" in response_lower:
+            return "false"
+        else:
+            return "uncertain"
+
+    def _parse_explanation(self, response: str) -> str:
+        """Extract explanation from AI response"""
+        # Look for EXPLANATION: section
+        match = re.search(r'EXPLANATION:\s*(.+?)(?=SOURCES:|$)', response, re.IGNORECASE | re.DOTALL)
+        if match:
+            return match.group(1).strip()
+
+        # Fallback: return first paragraph
+        lines = response.split('\n')
+        for line in lines:
+            if line.strip() and not line.startswith('STATUS:') and not line.startswith('SOURCES:'):
+                return line.strip()
+
+        return response[:200]
+
+    def _parse_sources(self, response: str) -> List[str]:
+        """Extract source URLs from AI response"""
+        # Look for SOURCES: section
+        match = re.search(r'SOURCES:\s*(.+?)$', response, re.IGNORECASE | re.DOTALL)
+        if match:
+            sources_text = match.group(1).strip()
+            # Extract URLs
+            urls = re.findall(r'https?://[^\s]+', sources_text)
+            return urls
+
+        return []
+
+    def _generate_fact_report(
+        self,
+        results: List[Dict[str, Any]],
+        doc_title: str
+    ) -> str:
+        """Generate markdown fact-checking report"""
+        report_lines = [
+            f"# 📋 Fact-Check Report: {doc_title}",
+            f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"**Total Claims Checked:** {len(results)}",
+            ""
+        ]
+
+        # Summary
+        verified_count = len([r for r in results if r["status"] == "verified"])
+        false_count = len([r for r in results if r["status"] == "false"])
+        uncertain_count = len([r for r in results if r["status"] == "uncertain"])
+
+        report_lines.append("## 📊 Summary")
+        report_lines.append(f"- ✅ **Verified:** {verified_count}")
+        report_lines.append(f"- ❌ **False/Misleading:** {false_count}")
+        report_lines.append(f"- ⚠️ **Uncertain:** {uncertain_count}")
+        report_lines.append("")
+
+        # Critical Issues
+        if false_count > 0:
+            report_lines.append("## 🚨 Critical Issues (MUST FIX)")
+            report_lines.append("")
+            for result in results:
+                if result["status"] == "false":
+                    report_lines.append(f"### ❌ {result['claim']}")
+                    report_lines.append(f"**Issue:** {result['explanation']}")
+                    if result.get("sources"):
+                        report_lines.append(f"**Sources:** {', '.join(result['sources'])}")
+                    report_lines.append("")
+
+        # Warnings
+        if uncertain_count > 0:
+            report_lines.append("## ⚠️ Warnings (Review Recommended)")
+            report_lines.append("")
+            for result in results:
+                if result["status"] == "uncertain":
+                    report_lines.append(f"### ⚠️ {result['claim']}")
+                    report_lines.append(f"**Note:** {result['explanation']}")
+                    report_lines.append("")
+
+        # Verified Claims
+        if verified_count > 0:
+            report_lines.append("## ✅ Verified Claims")
+            report_lines.append("")
+            for result in results:
+                if result["status"] == "verified":
+                    report_lines.append(f"- ✅ {result['claim']}")
+
+        report_lines.append("")
+        report_lines.append("---")
+        report_lines.append("**Note:** This is an AI-assisted fact-check. Always verify critical claims with primary sources.")
+
+        return "\n".join(report_lines)
+
+
+# Singleton instance
+fact_checker_service = FactCheckerService()
+
+
+# DATEI: backend/app/agents/agent_17_xml_architect/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_17_xml_architect/service.py --------------------
+"""
+Agent 17: XML Architect
+
+Generates FCPXML (Final Cut Pro XML) files for timeline import.
+Compatible with DaVinci Resolve, Premiere Pro, and Final Cut Pro.
+"""
+
+import logging
+from typing import Dict, Any, List, Optional
+import xml.etree.ElementTree as ET
+from xml.dom import minidom
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+
+class XMLArchitectService:
+    """Agent 17: Generate edit-ready XML timelines"""
+
+    def __init__(self):
+        logger.info("Agent 17 (XML Architect) initialized")
+
+    async def generate_fcpxml(
+        self,
+        assets: Dict[str, Any],
+        script: Optional[Dict[str, Any]] = None,
+        frame_rate: str = "24"
+    ) -> Dict[str, Any]:
+        """
+        Generate FCPXML timeline from assets
+
+        Args:
+            assets: {
+                "voiceover": {"file_path": str, "duration": float},
+                "music": {"file_path": str, "duration": float},
+                "videos": [{"file_path": str, "duration": float, "start_time": float}],
+                "images": [{"file_path": str, "duration": float, "start_time": float}]
+            }
+            script: Optional script for chapter markers
+            frame_rate: "24", "25", "30", or "60"
+
+        Returns:
+            {
+                "success": bool,
+                "xml_content": str,
+                "timeline_duration": float,
+                "tracks": int
+            }
+        """
+        try:
+            # Build FCPXML structure
+            xml_root = self._create_fcpxml_root(frame_rate)
+
+            # Create resources section
+            resources = ET.SubElement(xml_root, "resources")
+            self._add_resources(resources, assets)
+
+            # Create timeline (sequence)
+            library = ET.SubElement(xml_root, "library")
+            event = ET.SubElement(library, "event", name="Documentary")
+            project = ET.SubElement(event, "project", name="Main Timeline")
+
+            sequence = ET.SubElement(project, "sequence", {
+                "format": "r1",
+                "duration": self._seconds_to_timecode(self._calculate_total_duration(assets), frame_rate)
+            })
+
+            spine = ET.SubElement(sequence, "spine")
+
+            # Add assets to timeline
+            self._add_voiceover_track(spine, assets.get("voiceover"), frame_rate)
+            self._add_music_track(spine, assets.get("music"), frame_rate)
+            self._add_video_track(spine, assets.get("videos", []), frame_rate)
+            self._add_image_track(spine, assets.get("images", []), frame_rate)
+
+            # Add chapter markers if script provided
+            if script and "chapters" in script:
+                self._add_chapter_markers(spine, script["chapters"], frame_rate)
+
+            # Convert to pretty XML string
+            xml_content = self._prettify_xml(xml_root)
+
+            timeline_duration = self._calculate_total_duration(assets)
+            track_count = self._count_tracks(assets)
+
+            logger.info(f"Generated FCPXML: {timeline_duration:.1f}s, {track_count} tracks")
+
+            return {
+                "success": True,
+                "xml_content": xml_content,
+                "timeline_duration": timeline_duration,
+                "tracks": track_count,
+                "frame_rate": frame_rate
+            }
+
+        except Exception as e:
+            logger.error(f"Error generating FCPXML: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "xml_content": ""
+            }
+
+    def _create_fcpxml_root(self, frame_rate: str) -> ET.Element:
+        """Create root FCPXML element with proper namespaces"""
+        root = ET.Element("fcpxml", {
+            "version": "1.11"
+        })
+
+        # Add format definitions
+        resources = ET.SubElement(root, "resources")
+        ET.SubElement(resources, "format", {
+            "id": "r1",
+            "name": f"FFVideoFormat1080p{frame_rate}",
+            "frameDuration": self._get_frame_duration(frame_rate),
+            "width": "1920",
+            "height": "1080"
+        })
+
+        return root
+
+    def _get_frame_duration(self, frame_rate: str) -> str:
+        """Get frame duration for given frame rate"""
+        durations = {
+            "24": "100/2400s",
+            "25": "100/2500s",
+            "30": "100/3000s",
+            "60": "100/6000s"
+        }
+        return durations.get(frame_rate, "100/2400s")
+
+    def _add_resources(self, resources: ET.Element, assets: Dict[str, Any]) -> None:
+        """Add media resources to XML"""
+        resource_id = 1
+
+        # Add voiceover
+        if assets.get("voiceover"):
+            voiceover = assets["voiceover"]
+            ET.SubElement(resources, "asset", {
+                "id": f"r{resource_id}",
+                "name": "Voiceover",
+                "src": f"file://{voiceover.get('file_path', 'voiceover.mp3')}",
+                "format": "r1"
+            })
+            resource_id += 1
+
+        # Add music
+        if assets.get("music"):
+            music = assets["music"]
+            ET.SubElement(resources, "asset", {
+                "id": f"r{resource_id}",
+                "name": "Background Music",
+                "src": f"file://{music.get('file_path', 'music.mp3')}",
+                "format": "r1"
+            })
+            resource_id += 1
+
+        # Add videos
+        for i, video in enumerate(assets.get("videos", [])):
+            ET.SubElement(resources, "asset", {
+                "id": f"r{resource_id}",
+                "name": f"Video_{i+1}",
+                "src": f"file://{video.get('file_path', f'video_{i+1}.mp4')}",
+                "format": "r1"
+            })
+            resource_id += 1
+
+        # Add images
+        for i, image in enumerate(assets.get("images", [])):
+            ET.SubElement(resources, "asset", {
+                "id": f"r{resource_id}",
+                "name": f"Image_{i+1}",
+                "src": f"file://{image.get('file_path', f'image_{i+1}.jpg')}",
+                "format": "r1"
+            })
+            resource_id += 1
+
+    def _add_voiceover_track(
+        self,
+        spine: ET.Element,
+        voiceover: Optional[Dict[str, Any]],
+        frame_rate: str
+    ) -> None:
+        """Add voiceover to timeline (Track 1)"""
+        if not voiceover:
+            return
+
+        duration = voiceover.get("duration", 0)
+
+        audio_clip = ET.SubElement(spine, "audio", {
+            "ref": "r2",  # Voiceover resource
+            "offset": "0s",
+            "duration": f"{duration}s",
+            "name": "Narrator"
+        })
+
+    def _add_music_track(
+        self,
+        spine: ET.Element,
+        music: Optional[Dict[str, Any]],
+        frame_rate: str
+    ) -> None:
+        """Add background music to timeline (Track 2)"""
+        if not music:
+            return
+
+        duration = music.get("duration", 0)
+
+        audio_clip = ET.SubElement(spine, "audio", {
+            "ref": "r3",  # Music resource
+            "offset": "0s",
+            "duration": f"{duration}s",
+            "name": "Background Music",
+            "volume": "0.3"  # Lower volume for background
+        })
+
+    def _add_video_track(
+        self,
+        spine: ET.Element,
+        videos: List[Dict[str, Any]],
+        frame_rate: str
+    ) -> None:
+        """Add B-roll videos to timeline (Track 3)"""
+        if not videos:
+            return
+
+        resource_id = 4  # Start after voiceover and music
+
+        for video in videos:
+            start_time = video.get("start_time", 0)
+            duration = video.get("duration", 5)
+
+            video_clip = ET.SubElement(spine, "video", {
+                "ref": f"r{resource_id}",
+                "offset": f"{start_time}s",
+                "duration": f"{duration}s",
+                "name": video.get("title", "B-Roll")
+            })
+            resource_id += 1
+
+    def _add_image_track(
+        self,
+        spine: ET.Element,
+        images: List[Dict[str, Any]],
+        frame_rate: str
+    ) -> None:
+        """Add still images to timeline (Track 4)"""
+        if not images:
+            return
+
+        # Resource IDs start after videos
+        video_count = len(images)
+        resource_id = 4 + video_count
+
+        for image in images:
+            start_time = image.get("start_time", 0)
+            duration = image.get("duration", 3)
+
+            image_clip = ET.SubElement(spine, "video", {
+                "ref": f"r{resource_id}",
+                "offset": f"{start_time}s",
+                "duration": f"{duration}s",
+                "name": image.get("title", "Image")
+            })
+            resource_id += 1
+
+    def _add_chapter_markers(
+        self,
+        spine: ET.Element,
+        chapters: List[Dict[str, Any]],
+        frame_rate: str
+    ) -> None:
+        """Add chapter markers to timeline"""
+        current_time = 0.0
+
+        for chapter in chapters:
+            chapter_title = chapter.get("title", f"Chapter {chapter.get('chapter_number', '')}")
+
+            marker = ET.SubElement(spine, "marker", {
+                "start": f"{current_time}s",
+                "value": chapter_title
+            })
+
+            # Estimate chapter duration (words / WPM * 60)
+            narration = chapter.get("narration", "")
+            word_count = len(narration.split())
+            chapter_duration = (word_count / 150) * 60  # 150 WPM average
+
+            current_time += chapter_duration
+
+    def _calculate_total_duration(self, assets: Dict[str, Any]) -> float:
+        """Calculate total timeline duration"""
+        durations = []
+
+        if assets.get("voiceover"):
+            durations.append(assets["voiceover"].get("duration", 0))
+
+        if assets.get("music"):
+            durations.append(assets["music"].get("duration", 0))
+
+        for video in assets.get("videos", []):
+            end_time = video.get("start_time", 0) + video.get("duration", 0)
+            durations.append(end_time)
+
+        for image in assets.get("images", []):
+            end_time = image.get("start_time", 0) + image.get("duration", 0)
+            durations.append(end_time)
+
+        return max(durations) if durations else 0
+
+    def _count_tracks(self, assets: Dict[str, Any]) -> int:
+        """Count number of tracks in timeline"""
+        track_count = 0
+
+        if assets.get("voiceover"):
+            track_count += 1
+        if assets.get("music"):
+            track_count += 1
+        if assets.get("videos"):
+            track_count += 1
+        if assets.get("images"):
+            track_count += 1
+
+        return track_count
+
+    def _seconds_to_timecode(self, seconds: float, frame_rate: str) -> str:
+        """Convert seconds to timecode format"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        frames = int((seconds - int(seconds)) * int(frame_rate))
+
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}:{frames:02d}"
+
+    def _prettify_xml(self, elem: ET.Element) -> str:
+        """Return pretty-printed XML string"""
+        rough_string = ET.tostring(elem, encoding='unicode')
+        reparsed = minidom.parseString(rough_string)
+        return reparsed.toprettyxml(indent="  ")
+
+    async def generate_edl(self, assets: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Generate EDL (Edit Decision List) format as alternative to FCPXML
+
+        EDL is a simpler format supported by most editing software
+        """
+        try:
+            edl_lines = [
+                "TITLE: Documentary Timeline",
+                f"FCM: NON-DROP FRAME",
+                ""
+            ]
+
+            event_number = 1
+
+            # Add voiceover
+            if assets.get("voiceover"):
+                voiceover = assets["voiceover"]
+                duration = voiceover.get("duration", 0)
+                edl_lines.append(f"{event_number:03d}  AX       AA/V  C        00:00:00:00 00:00:{int(duration):02d}:00 00:00:00:00 00:00:{int(duration):02d}:00")
+                edl_lines.append(f"* FROM CLIP NAME: Voiceover")
+                event_number += 1
+
+            # Add music
+            if assets.get("music"):
+                music = assets["music"]
+                duration = music.get("duration", 0)
+                edl_lines.append(f"{event_number:03d}  AX       AA    C        00:00:00:00 00:00:{int(duration):02d}:00 00:00:00:00 00:00:{int(duration):02d}:00")
+                edl_lines.append(f"* FROM CLIP NAME: Background Music")
+                event_number += 1
+
+            edl_content = "\n".join(edl_lines)
+
+            return {
+                "success": True,
+                "edl_content": edl_content,
+                "format": "CMX3600"
+            }
+
+        except Exception as e:
+            logger.error(f"Error generating EDL: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+
+# Singleton instance
+xml_architect_service = XMLArchitectService()
+
+
+# DATEI: backend/app/agents/agent_10_youtube/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_10_youtube/service.py --------------------
+"""
+Agent 10: YouTube Packager - "The Marketing Strategist"
+Generates viral metadata and thumbnail prompts for YouTube uploads
+"""
+
+from typing import Optional, Dict, Any
+from app.infrastructure.external_services.gemini_service import gemini_service
+from app.utils.logger import setup_logger
+
+logger = setup_logger("Agent10_YouTube")
+
+
+class Agent10YouTubePackager:
+    """Singleton service for YouTube upload package generation"""
+
+    _instance: Optional['Agent10YouTubePackager'] = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def generate_metadata(
+        self,
+        song_title: str,
+        artist: str,
+        genre: str = None,
+        mood: str = None,
+        style: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate viral YouTube metadata
+
+        Args:
+            song_title: Song title
+            artist: Artist name
+            genre: Music genre (optional)
+            mood: Song mood (optional)
+            style: Visual style dict (optional)
+
+        Returns:
+            Dict with title, description, tags
+        """
+        logger.info(f"Generating YouTube metadata for '{song_title}' by {artist}")
+
+        # Build context for AI
+        context_parts = [f"Song: {song_title}", f"Artist: {artist}"]
+        if genre:
+            context_parts.append(f"Genre: {genre}")
+        if mood:
+            context_parts.append(f"Mood: {mood}")
+        if style:
+            context_parts.append(f"Visual Style: {style.get('name', 'N/A')}")
+
+        context = "\n".join(context_parts)
+
+        # Generate metadata with Gemini
+        metadata_prompt = f"""You are a YouTube marketing expert specializing in music videos.
+
+Generate viral YouTube metadata for this music video:
+
+{context}
+
+**Requirements:**
+
+1. **TITLE** (max 100 chars):
+   - Must be catchy and click-worthy
+   - Include artist name
+   - Use emojis strategically (1-2 max)
+   - Optimize for YouTube search
+   - Example format: "Artist Name - Song Title (Official Music Video) 🎵"
+
+2. **DESCRIPTION** (500-1000 chars):
+   - First 2 lines are CRITICAL (shown in search)
+   - Include song credits and artist info
+   - Add relevant timestamps if applicable
+   - Social media links placeholders
+   - Call to action (like, subscribe, comment)
+   - SEO keywords naturally integrated
+   - Professional but engaging tone
+
+3. **TAGS** (15-20 tags):
+   - Mix of broad and specific tags
+   - Include: genre, mood, artist name, trending keywords
+   - Format as comma-separated list
+   - Focus on discoverability
+
+**Output format:**
+```
+TITLE:
+[your title here]
+
+DESCRIPTION:
+[your description here]
+
+TAGS:
+[tag1, tag2, tag3, ...]
+```
+
+Generate the metadata now:"""
+
+        try:
+            ai_response = await gemini_service.generate_text(metadata_prompt, temperature=0.8)
+
+            # Parse response
+            title = ""
+            description = ""
+            tags = []
+
+            sections = ai_response.split('\n\n')
+            current_section = None
+
+            for section in sections:
+                section = section.strip()
+
+                if section.startswith('TITLE:'):
+                    current_section = 'title'
+                    title = section.replace('TITLE:', '').strip()
+                elif section.startswith('DESCRIPTION:'):
+                    current_section = 'description'
+                    description = section.replace('DESCRIPTION:', '').strip()
+                elif section.startswith('TAGS:'):
+                    current_section = 'tags'
+                    tags_text = section.replace('TAGS:', '').strip()
+                    # Parse tags (handle both comma-separated and newline-separated)
+                    tags = [tag.strip() for tag in tags_text.replace('\n', ',').split(',') if tag.strip()]
+                elif current_section == 'description' and section and not section.startswith('TAGS'):
+                    # Multi-paragraph description
+                    description += '\n\n' + section
+
+            # Fallback if parsing failed
+            if not title:
+                title = f"{artist} - {song_title} (Official Music Video)"
+            if not description:
+                description = self._generate_fallback_description(song_title, artist, genre, mood)
+            if not tags:
+                tags = self._generate_fallback_tags(genre, mood, artist)
+
+            # Clean up title (max 100 chars)
+            if len(title) > 100:
+                title = title[:97] + "..."
+
+            logger.info(f"Generated metadata: {len(tags)} tags, {len(description)} chars description")
+
+            return {
+                "title": title,
+                "description": description,
+                "tags": tags,
+                "hashtags": self._extract_hashtags(tags)
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to generate metadata with AI: {e}")
+            return {
+                "title": f"{artist} - {song_title} (Official Music Video)",
+                "description": self._generate_fallback_description(song_title, artist, genre, mood),
+                "tags": self._generate_fallback_tags(genre, mood, artist),
+                "hashtags": []
+            }
+
+    async def generate_thumbnail_prompt(
+        self,
+        song_title: str,
+        artist: str,
+        style: Optional[Dict[str, str]] = None,
+        mood: str = None
+    ) -> str:
+        """
+        Generate thumbnail image prompt for Imagen 3 / Midjourney
+
+        Args:
+            song_title: Song title
+            artist: Artist name
+            style: Visual style from Agent 5 (optional)
+            mood: Song mood (optional)
+
+        Returns:
+            Image generation prompt string
+        """
+        logger.info(f"Generating thumbnail prompt for '{song_title}'")
+
+        # Build context
+        context_parts = [f"Music Video: {song_title} by {artist}"]
+        if mood:
+            context_parts.append(f"Mood: {mood}")
+
+        style_suffix = ""
+        if style and style.get('suffix'):
+            style_suffix = style.get('suffix')
+            context_parts.append(f"Visual Style: {style.get('name')}")
+
+        context = "\n".join(context_parts)
+
+        # Generate prompt with AI
+        thumbnail_prompt = f"""You are a thumbnail designer for viral music videos.
+
+Create an image generation prompt for a YouTube thumbnail:
+
+{context}
+
+**Thumbnail Requirements:**
+- YouTube format: 1280x720px (16:9)
+- Must be eye-catching and click-worthy
+- Should represent the video's visual style
+- Include the artist or symbolic representation
+- Bold, high-contrast visuals
+- Cinematic and professional
+
+**Visual Style Context:**
+{style_suffix if style_suffix else "Cinematic music video aesthetic"}
+
+**Output:**
+Generate a detailed image prompt (100-150 words) for Imagen 3 or Midjourney.
+Focus on: composition, colors, lighting, subject, mood, and technical style.
+
+Format: Just the prompt text, no explanation.
+
+Generate the thumbnail prompt now:"""
+
+        try:
+            thumbnail_prompt_text = await gemini_service.generate_text(
+                thumbnail_prompt,
+                temperature=0.75
+            )
+
+            # Clean up response
+            thumbnail_prompt_text = thumbnail_prompt_text.strip()
+
+            # Ensure it includes 16:9 aspect ratio hint
+            if '16:9' not in thumbnail_prompt_text and 'aspect ratio' not in thumbnail_prompt_text.lower():
+                thumbnail_prompt_text += ", 16:9 aspect ratio, YouTube thumbnail format"
+
+            logger.info("Thumbnail prompt generated successfully")
+            return thumbnail_prompt_text
+
+        except Exception as e:
+            logger.error(f"Failed to generate thumbnail prompt: {e}")
+
+            # Fallback thumbnail prompt
+            if style_suffix:
+                return f"Music video thumbnail for {artist} - {song_title}, {style_suffix}, cinematic composition, bold typography, high contrast, vibrant colors, 16:9 aspect ratio, YouTube thumbnail format"
+            else:
+                return f"Music video thumbnail for {artist} - {song_title}, cinematic lighting, bold composition, vibrant colors, artistic portrait, high contrast, 16:9 aspect ratio, YouTube thumbnail format"
+
+    def _generate_fallback_description(
+        self,
+        song_title: str,
+        artist: str,
+        genre: str = None,
+        mood: str = None
+    ) -> str:
+        """Generate fallback description if AI fails"""
+        desc_lines = [
+            f"🎵 {artist} - {song_title} (Official Music Video)",
+            "",
+            f"Watch the official music video for '{song_title}' by {artist}.",
+        ]
+
+        if genre:
+            desc_lines.append(f"Genre: {genre}")
+        if mood:
+            desc_lines.append(f"Vibe: {mood}")
+
+        desc_lines.extend([
+            "",
+            "🔔 Subscribe for more music videos!",
+            "👍 Like if you enjoyed this video",
+            "💬 Comment your favorite moment below",
+            "",
+            "Follow us:",
+            "Instagram: [Your Instagram]",
+            "TikTok: [Your TikTok]",
+            "Spotify: [Your Spotify]",
+            "",
+            "Credits:",
+            f"Artist: {artist}",
+            "Video Production: [Your Production Company]",
+            "",
+            "#MusicVideo #NewMusic #OfficialVideo"
+        ])
+
+        return "\n".join(desc_lines)
+
+    def _generate_fallback_tags(
+        self,
+        genre: str = None,
+        mood: str = None,
+        artist: str = None
+    ) -> list:
+        """Generate fallback tags if AI fails"""
+        tags = [
+            "music video",
+            "official video",
+            "new music",
+            "music 2025"
+        ]
+
+        if artist:
+            tags.append(artist.lower())
+        if genre:
+            tags.extend([genre.lower(), f"{genre.lower()} music"])
+        if mood:
+            tags.append(mood.lower())
+
+        tags.extend([
+            "viral music",
+            "trending",
+            "music clips",
+            "official music video",
+            "new release",
+            "music premiere"
+        ])
+
+        return tags[:20]
+
+    def _extract_hashtags(self, tags: list) -> list:
+        """Convert tags to hashtags (top 5 most relevant)"""
+        hashtags = []
+
+        priority_tags = [tag for tag in tags if len(tag.split()) <= 2]  # Prefer short tags
+        for tag in priority_tags[:5]:
+            # Convert to hashtag format
+            hashtag = "#" + tag.replace(" ", "").replace(",", "")
+            hashtags.append(hashtag)
+
+        return hashtags
+
+
+# Singleton instance
+agent10_service = Agent10YouTubePackager()
+
+
+# DATEI: backend/app/agents/agent_5_style_anchors/__init__.py --------------------
+
+
+# DATEI: backend/app/agents/agent_5_style_anchors/service.py --------------------
+"""
+Agent 5: Style Anchors & Visual Learning
+"The Art Director" - Ensures visual consistency and learns new styles from images
+"""
+
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+from app.infrastructure.external_services.gemini_service import gemini_service
+from app.infrastructure.database.google_sheet_service import (
+    google_sheet_service,
+    SHEET_A5_STYLE_DATABASE
+)
+from app.utils.logger import setup_logger
+
+logger = setup_logger("Agent5_StyleAnchors")
+
+
+class Agent5StyleAnchors:
+    """Singleton service for style management and visual learning"""
+
+    _instance: Optional['Agent5StyleAnchors'] = None
+    _styles_cache: Optional[List[Dict[str, str]]] = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    async def get_available_styles(self) -> List[Dict[str, str]]:
+        """
+        Get all available style presets from A5_Style_Database
+
+        Returns:
+            List of style dictionaries with:
+            - name: Style name (e.g., "CineStill 800T")
+            - suffix: Prompt suffix for video generation
+            - negative: Negative prompt (optional)
+            - description: Human-readable description (optional)
+        """
+        logger.info("Fetching available style presets")
+
+        # Check cache first
+        if self._styles_cache:
+            logger.info(f"Using cached styles ({len(self._styles_cache)} entries)")
+            return self._styles_cache
+
+        try:
+            records = await google_sheet_service.get_all_records(SHEET_A5_STYLE_DATABASE)
+
+            if records and len(records) > 0:
+                logger.info(f"Loaded {len(records)} styles from database")
+
+                styles = []
+                for record in records:
+                    styles.append({
+                        "name": record.get("name", "Unknown Style"),
+                        "suffix": record.get("suffix", ""),
+                        "negative": record.get("negative", ""),
+                        "description": record.get("description", ""),
+                        "created_at": record.get("created_at", "")
+                    })
+
+                # Cache results
+                self._styles_cache = styles
+                return styles
+
+        except Exception as e:
+            logger.warning(f"Could not load styles from database: {e}")
+
+        # Fallback: Default style presets
+        logger.info("Using fallback style presets")
+        fallback_styles = [
+            {
+                "name": "CineStill 800T",
+                "suffix": "shot on CineStill 800T film, soft neon lighting with high contrast, teal and orange color grading, cinematic bokeh, moody urban aesthetic",
+                "negative": "oversaturated, blown highlights, poor grain structure",
+                "description": "Tungsten-balanced film with characteristic red halation around light sources"
+            },
+            {
+                "name": "Portra 400",
+                "suffix": "shot on Kodak Portra 400 film, natural soft lighting, warm skin tones, pastel colors, fine grain, professional portrait aesthetic",
+                "negative": "harsh shadows, oversaturated colors, digital look",
+                "description": "Professional portrait film known for accurate skin tones and fine grain"
+            },
+            {
+                "name": "Blade Runner 2049",
+                "suffix": "cinematography inspired by Blade Runner 2049, dramatic side lighting, deep orange and teal color grading, volumetric fog, ultra-wide composition, desolate futuristic aesthetic",
+                "negative": "bright lighting, flat colors, cluttered composition",
+                "description": "Denis Villeneuve's neo-noir sci-fi aesthetic with Roger Deakins cinematography"
+            },
+            {
+                "name": "Music Video - Neon",
+                "suffix": "music video aesthetic, vibrant neon lights, high contrast, fast cuts, dynamic camera movements, colorful gels, club lighting, energetic urban vibe",
+                "negative": "static shots, muted colors, slow pacing",
+                "description": "High-energy music video style with neon club aesthetics"
+            },
+            {
+                "name": "Analog VHS",
+                "suffix": "shot on VHS camcorder, analog video artifacts, color bleeding, scan lines, vintage 80s/90s home video aesthetic, nostalgic lo-fi look",
+                "negative": "sharp digital, clean image, modern look",
+                "description": "Retro VHS aesthetic with characteristic artifacts and degradation"
+            },
+            {
+                "name": "Anamorphic Flares",
+                "suffix": "shot with anamorphic lenses, horizontal lens flares, 2.39:1 aspect ratio, shallow depth of field, creamy bokeh, cinematic widescreen aesthetic",
+                "negative": "spherical bokeh, no lens character, flat image",
+                "description": "Widescreen cinematic look with characteristic anamorphic lens flares"
+            },
+            {
+                "name": "Noir Shadow Play",
+                "suffix": "film noir cinematography, dramatic chiaroscuro lighting, venetian blind shadows, high contrast black and white aesthetic, moody crime thriller style",
+                "negative": "flat lighting, color footage, low contrast",
+                "description": "Classic film noir with dramatic shadow play and high contrast"
+            },
+            {
+                "name": "Golden Hour Natural",
+                "suffix": "shot during golden hour, warm natural sunlight, soft shadows, rich golden tones, shallow depth of field, organic bokeh, dreamy cinematic aesthetic",
+                "negative": "artificial lighting, harsh shadows, cool tones",
+                "description": "Natural golden hour cinematography with warm, soft light"
+            }
+        ]
+
+        self._styles_cache = fallback_styles
+        return fallback_styles
+
+    async def learn_style_from_image(
+        self,
+        image_bytes: bytes,
+        style_name: str,
+        mime_type: str = "image/jpeg"
+    ) -> Dict[str, Any]:
+        """
+        Learn a new visual style from an uploaded image using Gemini Vision
+
+        Process:
+        1. Send image to Gemini 1.5 Pro (Vision)
+        2. AI analyzes lighting, color grading, film stock, composition
+        3. Generates a compact "prompt suffix" (30-50 words)
+        4. Saves to A5_Style_Database as a new preset
+
+        Args:
+            image_bytes: Image file bytes
+            style_name: Name for the new style (e.g., "My Custom Look")
+            mime_type: MIME type (image/jpeg, image/png, etc.)
+
+        Returns:
+            Dict with:
+            - name: Style name
+            - suffix: Generated prompt suffix
+            - status: "success" or "error"
+        """
+        logger.info(f"Learning new style from image: {style_name}")
+
+        try:
+            # Step 1: Analyze image with Gemini Vision
+            style_suffix = await gemini_service.analyze_image_style(
+                image_bytes=image_bytes,
+                mime_type=mime_type
+            )
+
+            logger.info(f"Gemini generated style suffix: {style_suffix}")
+
+            # Step 2: Save to Google Sheets
+            timestamp = datetime.now().isoformat()
+            data = [
+                style_name,
+                style_suffix,
+                "",  # negative prompt (empty for learned styles)
+                f"AI-learned style from uploaded image",  # description
+                timestamp
+            ]
+
+            success = await google_sheet_service.append_row(SHEET_A5_STYLE_DATABASE, data)
+
+            if success:
+                # Clear cache to force reload
+                self._styles_cache = None
+
+                logger.info(f"✅ Style '{style_name}' saved to database")
+                return {
+                    "name": style_name,
+                    "suffix": style_suffix,
+                    "status": "success",
+                    "message": f"Style '{style_name}' learned and saved successfully"
+                }
+            else:
+                logger.error("Failed to save style to database")
+                return {
+                    "name": style_name,
+                    "suffix": style_suffix,
+                    "status": "error",
+                    "message": "Failed to save to database"
+                }
+
+        except Exception as e:
+            logger.error(f"Error learning style from image: {e}")
+            return {
+                "name": style_name,
+                "suffix": "",
+                "status": "error",
+                "message": f"Failed to analyze image: {str(e)}"
+            }
+
+    async def generate_style_reference(
+        self,
+        prompt: str,
+        style_name: str = None,
+        aspect_ratio: str = "1:1",
+        save_to_database: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Generate a visual style reference image using Imagen 3.0/4
+
+        Process:
+        1. Generate image with Imagen based on text prompt
+        2. Analyze generated image with Gemini Vision to extract style suffix
+        3. Optionally save to A5_Style_Database
+
+        Args:
+            prompt: Text description of desired visual style
+                   Example: "Cyberpunk city at night, neon lights, rain-soaked streets"
+            style_name: Name for the style (required if save_to_database=True)
+            aspect_ratio: Image aspect ratio ("1:1", "16:9", "9:16", "4:3", "3:4")
+            save_to_database: Whether to save the learned style to database
+
+        Returns:
+            Dict with:
+            - success: bool
+            - image_base64: Base64-encoded generated image
+            - style_suffix: Extracted style description
+            - style_name: Style name (if saved)
+            - model: Model used for generation
+        """
+        logger.info(f"Generating style reference image: {prompt[:100]}...")
+
+        try:
+            # Step 1: Generate image with Imagen
+            image_result = await gemini_service.generate_image(
+                prompt=prompt,
+                aspect_ratio=aspect_ratio,
+                number_of_images=1
+            )
+
+            if not image_result.get("success"):
+                logger.warning("Imagen generation returned placeholder")
+
+            # Get first image
+            image_base64 = image_result["images"][0]
+
+            # Step 2: Analyze generated image to extract style
+            # Convert base64 back to bytes for analysis
+            import base64
+            image_bytes = base64.b64decode(image_base64)
+
+            # Determine mime type based on image format
+            mime_type = "image/png"  # Imagen typically generates PNG
+            if image_result.get("model") == "placeholder":
+                mime_type = "image/svg+xml"
+
+            style_suffix = await gemini_service.analyze_image_style(
+                image_bytes=image_bytes,
+                mime_type=mime_type
+            )
+
+            logger.info(f"Extracted style suffix: {style_suffix}")
+
+            result = {
+                "success": image_result.get("success", False),
+                "image_base64": image_base64,
+                "style_suffix": style_suffix,
+                "model": image_result.get("model"),
+                "aspect_ratio": aspect_ratio,
+                "original_prompt": prompt
+            }
+
+            # Step 3: Optionally save to database
+            if save_to_database:
+                if not style_name:
+                    return {
+                        **result,
+                        "status": "error",
+                        "message": "style_name is required when save_to_database=True"
+                    }
+
+                timestamp = datetime.now().isoformat()
+                data = [
+                    style_name,
+                    style_suffix,
+                    "",  # negative prompt
+                    f"AI-generated style from Imagen: {prompt[:100]}",  # description
+                    timestamp
+                ]
+
+                save_success = await google_sheet_service.append_row(SHEET_A5_STYLE_DATABASE, data)
+
+                if save_success:
+                    # Clear cache to force reload
+                    self._styles_cache = None
+                    result["style_name"] = style_name
+                    result["saved"] = True
+                    result["message"] = f"Style '{style_name}' generated and saved successfully"
+                    logger.info(f"✅ Style '{style_name}' saved to database")
+                else:
+                    result["saved"] = False
+                    result["message"] = "Image generated but failed to save to database"
+            else:
+                result["saved"] = False
+                result["message"] = "Style reference generated successfully (not saved)"
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error generating style reference: {e}")
+            return {
+                "success": False,
+                "image_base64": None,
+                "style_suffix": "",
+                "status": "error",
+                "message": f"Failed to generate style reference: {str(e)}"
+            }
+
+    def clear_cache(self):
+        """Clear the styles cache to force reload from database"""
+        self._styles_cache = None
+        logger.info("Styles cache cleared")
+
+
+# Singleton instance
+agent5_service = Agent5StyleAnchors()
