@@ -4,9 +4,14 @@ Music Video Production System - Main FastAPI Application
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import os
+from dotenv import load_dotenv
+
+# Load environment variables immediately
+load_dotenv()
+
 from app.api.v1.endpoints import router as api_router
 from app.utils.logger import setup_logger
-import os
 
 logger = setup_logger("Main")
 

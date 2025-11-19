@@ -40,9 +40,9 @@ class GeminiService:
 
         try:
             genai.configure(api_key=api_key)
-            # Use gemini-3.0-pro for better tool support (including Google Search Grounding)
-            self.model = genai.GenerativeModel('gemini-3.0-pro')
-            self.vision_model = genai.GenerativeModel('gemini-3.0-pro')  # Vision support
+            # Use gemini-3-pro-preview as requested by user
+            self.model = genai.GenerativeModel('gemini-3-pro-preview')
+            self.vision_model = genai.GenerativeModel('gemini-3-pro-preview')  # Vision support
 
             # Try to initialize Imagen model (if available in API)
             try:
@@ -65,7 +65,9 @@ class GeminiService:
         prompt: str,
         temperature: float = 0.7,
         max_tokens: int = 2048,
-        use_search: bool = False
+        use_search: bool = False,
+        response_mime_type: Optional[str] = None,
+        model_name: Optional[str] = None
     ) -> str:
         """
         Generate text using Gemini
@@ -75,6 +77,8 @@ class GeminiService:
             temperature: Creativity level (0.0 to 1.0)
             max_tokens: Maximum tokens to generate
             use_search: If True, enables Google Search Grounding for real-time web data
+            response_mime_type: Optional MIME type for response format (e.g., "application/json")
+            model_name: Optional model override (e.g., "gemini-1.5-flash" for fast, cheap calls)
 
         Returns:
             Generated text
@@ -84,10 +88,23 @@ class GeminiService:
             return self._mock_response(prompt)
 
         try:
-            generation_config = genai.types.GenerationConfig(
-                temperature=temperature,
-                max_output_tokens=max_tokens
-            )
+            # Select model: use override if provided, otherwise default
+            selected_model = self.model
+            if model_name:
+                logger.info(f"Using model override: {model_name}")
+                selected_model = genai.GenerativeModel(model_name)
+
+            # Build generation config with optional response_mime_type
+            config_params = {
+                "temperature": temperature,
+                "max_output_tokens": max_tokens
+            }
+
+            if response_mime_type:
+                config_params["response_mime_type"] = response_mime_type
+                logger.info(f"Using response_mime_type: {response_mime_type}")
+
+            generation_config = genai.types.GenerationConfig(**config_params)
 
             # Configure Google Search Grounding if requested
             tools = None
@@ -101,7 +118,7 @@ class GeminiService:
                     logger.warning(f"Could not enable Google Search Grounding: {search_err}")
                     tools = None
 
-            response = self.model.generate_content(
+            response = selected_model.generate_content(
                 prompt,
                 generation_config=generation_config,
                 tools=tools

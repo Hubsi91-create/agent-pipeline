@@ -53,7 +53,7 @@ class DebuggerService:
 
         try:
             # Extract config
-            model_name = config.get("model", "gemini-1.5-pro")
+            model_name = config.get("model", "gemini-3-pro-preview")
             system_instruction = config.get("system_instruction", "You are a helpful AI assistant.")
             temperature = config.get("temperature", 1.0)
             top_p = config.get("top_p", 0.95)
@@ -179,9 +179,9 @@ class DebuggerService:
         """Get list of available Gemini models"""
         return [
             "gemini-2.0-flash-exp",
-            "gemini-1.5-pro",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-8b"
+            "gemini-3-pro-preview",
+            "gemini-2.0-flash-exp",
+            "gemini-2.0-flash"
         ]
 
     def get_agent_presets(self) -> Dict[str, Dict[str, Any]]:
@@ -189,49 +189,49 @@ class DebuggerService:
         return {
             "Agent 1 - Project Manager": {
                 "system_instruction": "You are Agent 1: The Project Manager. Your role is to analyze music video concepts, generate genre variations, and manage viral trends. You think strategically and provide detailed creative direction.",
-                "model": "gemini-1.5-pro",
+                "model": "gemini-3-pro-preview",
                 "temperature": 0.8,
                 "top_p": 0.95,
                 "top_k": 64
             },
             "Agent 2 - Lyrics Writer": {
                 "system_instruction": "You are Agent 2: The Lyrics Writer. You create compelling, emotionally resonant lyrics that tell stories. Your lyrics are poetic, catchy, and align with the music video's theme.",
-                "model": "gemini-1.5-pro",
+                "model": "gemini-3-pro-preview",
                 "temperature": 0.9,
                 "top_p": 0.95,
                 "top_k": 64
             },
             "Agent 3 - Music Style Analyzer": {
                 "system_instruction": "You are Agent 3: The Music Style Analyzer. You analyze musical genres, identify key characteristics, and provide detailed style descriptions for music production.",
-                "model": "gemini-1.5-pro",
+                "model": "gemini-3-pro-preview",
                 "temperature": 0.7,
                 "top_p": 0.95,
                 "top_k": 64
             },
             "Agent 4 - Scene Planner": {
                 "system_instruction": "You are Agent 4: The Scene Planner. You break down music videos into detailed scene-by-scene breakdowns with timestamps, moods, and visual descriptions.",
-                "model": "gemini-1.5-pro",
+                "model": "gemini-3-pro-preview",
                 "temperature": 0.8,
                 "top_p": 0.95,
                 "top_k": 64
             },
             "Agent 5 - Video Prompter (Veo)": {
                 "system_instruction": "You are Agent 5: The Video Prompter for Google Veo. You create cinematic, narrative-driven video prompts that focus on storytelling and emotional impact. Keep prompts concise (50-100 words).",
-                "model": "gemini-1.5-pro",
+                "model": "gemini-3-pro-preview",
                 "temperature": 0.75,
                 "top_p": 0.95,
                 "top_k": 64
             },
             "Agent 6 - Video Prompter (Runway)": {
                 "system_instruction": "You are Agent 6: The Video Prompter for Runway Gen-4. You create modular, technical video prompts with precise camera movements and visual details. Keep prompts structured and specific.",
-                "model": "gemini-1.5-pro",
+                "model": "gemini-3-pro-preview",
                 "temperature": 0.75,
                 "top_p": 0.95,
                 "top_k": 64
             },
             "Custom Agent": {
                 "system_instruction": "You are a helpful and precise AI assistant. You always think step-by-step before answering.",
-                "model": "gemini-1.5-pro",
+                "model": "gemini-3-pro-preview",
                 "temperature": 1.0,
                 "top_p": 0.95,
                 "top_k": 64

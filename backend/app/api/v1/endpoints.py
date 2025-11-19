@@ -599,7 +599,7 @@ async def learn_style_from_image(
     Learn a new visual style from an uploaded image using Gemini Vision
 
     Process:
-    1. Send image to Gemini 1.5 Pro (Vision)
+    1. Send image to Gemini 3.0 Preview (Vision)
     2. AI analyzes lighting, color grading, film stock, composition
     3. Generates a compact "prompt suffix" (30-50 words)
     4. Saves to A5_Style_Database as a new preset
