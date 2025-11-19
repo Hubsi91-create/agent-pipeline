@@ -395,22 +395,44 @@ with tab1:
 
                             st.rerun()
 
-        # Custom Genre Button
+        # Custom Genre Input (Fix: Stables Formular)
         st.markdown("---")
-        custom_col1, custom_col2 = st.columns([1, 2])
-        with custom_col1:
-            if st.button("➕ Custom Genre", use_container_width=True):
-                st.session_state.show_custom_input = True
+        st.subheader("➕ Custom Genre")
 
-        with custom_col2:
-            if st.session_state.get('show_custom_input', False):
-                custom_genre = st.text_input("Enter custom genre", key="custom_genre_input")
-                if custom_genre and st.button("Generate", key="custom_generate"):
-                    st.session_state.selected_supergenre = custom_genre
-                    st.session_state.selected_variations = []
-                    st.session_state.generated_prompts = []
-                    # Trigger generation (same as above)
-                    st.rerun()
+        with st.form(key="custom_genre_form"):
+            col_input, col_btn = st.columns([3, 1])
+            with col_input:
+                custom_genre_input = st.text_input("Genre eingeben", placeholder="z.B. Space Jazz")
+            with col_btn:
+                st.write("") # Spacer
+                st.write("")
+                submit_button = st.form_submit_button(label="🚀 Generate", use_container_width=True)
+
+            if submit_button and custom_genre_input:
+                st.session_state.selected_supergenre = custom_genre_input
+                # Reset previous results
+                st.session_state.selected_variations = []
+                st.session_state.generated_prompts = []
+
+                # Trigger generation
+                with st.spinner(f"Agent 1 generiert Variationen für '{custom_genre_input}'..."):
+                    try:
+                        response = requests.post(
+                            f"{API_BASE_URL}/api/v1/genres/variations",
+                            json={"super_genre": custom_genre_input, "num_variations": 20},
+                            timeout=60
+                        )
+
+                        if response.status_code == 200:
+                            data = response.json().get('data', [])
+                            st.session_state.genre_variations = data
+                            st.success(f"✅ 20 Variationen für {custom_genre_input} gefunden!")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ API Error: {response.text}")
+
+                    except Exception as e:
+                        st.error(f"❌ Verbindungsfehler: {str(e)}")
 
         # ================================
         # VARIATIONS SELECTION (appears after genre selection)
