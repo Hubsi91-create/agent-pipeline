@@ -1,0 +1,10 @@
+﻿__pycache__
+.git
+.gitignore
+*.zip
+*.pyc
+venv/
+env/
+node_modules/
+Dockerfile
+README.md

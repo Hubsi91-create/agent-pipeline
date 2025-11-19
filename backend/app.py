@@ -897,4 +897,3 @@ with tab7:
         st.json(st.session_state.debugger_config)
 
     st.markdown("</div>", unsafe_allow_html=True)
-
