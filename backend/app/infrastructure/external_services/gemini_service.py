@@ -40,9 +40,9 @@ class GeminiService:
 
         try:
             genai.configure(api_key=api_key)
-            # Use gemini-1.5-pro for better tool support (including Google Search Grounding)
-            self.model = genai.GenerativeModel('gemini-1.5-pro')
-            self.vision_model = genai.GenerativeModel('gemini-1.5-pro')  # Vision support
+            # Use gemini-3.0-pro for better tool support (including Google Search Grounding)
+            self.model = genai.GenerativeModel('gemini-3.0-pro')
+            self.vision_model = genai.GenerativeModel('gemini-3.0-pro')  # Vision support
 
             # Try to initialize Imagen model (if available in API)
             try:

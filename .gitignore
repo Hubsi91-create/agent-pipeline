@@ -46,3 +46,7 @@ Thumbs.db
 # Database
 *.db
 *.sqlite3
+
+# Secrets
+credentials.json
+backend/credentials.json

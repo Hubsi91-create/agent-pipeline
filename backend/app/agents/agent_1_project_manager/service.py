@@ -15,6 +15,7 @@ from app.infrastructure.external_services.gemini_service import gemini_service
 from app.utils.logger import setup_logger
 import random
 import json
+import re
 from datetime import datetime
 
 logger = setup_logger("Agent1_ProjectManager")
@@ -323,7 +324,6 @@ Generate {num_variations} variations for: {super_genre}"""
             ai_response = await gemini_service.generate_text(prompt)
 
             # Parse JSON response with robust cleaning
-            import re
 
             # 1. Find JSON array with regex (everything between [ and ])
             json_match = re.search(r'\[.*\]', ai_response, re.DOTALL)
