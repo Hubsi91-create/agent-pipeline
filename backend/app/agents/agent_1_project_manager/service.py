@@ -536,15 +536,8 @@ Respond with pure JSON only:"""
         """
         logger.info(f"🎵 Generating {num_variations} variations for: {super_genre}")
 
-        # STRATEGY 1: Check static database first (instant, no API calls)
-        if super_genre in STATIC_SUBGENRES:
-            logger.info(f"✅ Found {super_genre} in static database - returning curated subgenres")
-            static_variations = STATIC_SUBGENRES[super_genre]
-            # Return the requested number (or all if fewer available)
-            return static_variations[:num_variations]
-
-        # STRATEGY 2: Not in static DB - use AI generation
-        logger.info(f"⚠️ {super_genre} not in static database - calling AI for generation")
+        # Always use AI generation for fresh ideas
+        logger.info(f"🤖 Calling AI for generation of {super_genre} variations")
 
         prompt = f"""You are a music trend expert and genre specialist with deep knowledge of subgenres.
 
@@ -556,8 +549,7 @@ REQUIREMENTS:
 3. Add a brief description (1 sentence, max 15 words)
 4. Mix classic subgenres with modern fusion styles
 5. Consider current TikTok, YouTube, and Spotify trends
-
-CRITICAL: Return a raw JSON array. Do NOT wrap in markdown code blocks. Do NOT add any text before or after the JSON.
+6. Respond ONLY with a raw JSON array. Do not use Markdown code blocks.
 
 FORMAT (exactly like this):
 [
@@ -578,6 +570,9 @@ Return ONLY the JSON array, nothing else."""
                 temperature=0.7,
                 response_mime_type="application/json"
             )
+
+            if not ai_response:
+                raise ValueError("Empty response from Gemini CLI wrapper")
 
             logger.info(f"📥 Received AI response ({len(ai_response)} chars)")
 
@@ -632,19 +627,14 @@ Return ONLY the JSON array, nothing else."""
         except Exception as e:
             logger.error(f"❌ AI generation completely failed: {e}")
             logger.error(f"❌ Exception type: {type(e).__name__}")
-            logger.error(f"❌ Full traceback will show in logs")
-            logger.warning(f"⚠️ USING GENERIC FALLBACK for {super_genre} - This should not happen!")
+            import traceback
+            error_trace = traceback.format_exc()
+            logger.error(f"❌ Full traceback:\n{error_trace}")
+            logger.error(f"🔍 SUPER_GENRE: {super_genre}")
+            logger.error(f"🔍 NUM_VARIATIONS: {num_variations}")
 
-            # Fallback ONLY when AI completely fails (should be rare with improved parsing)
-            fallback_variations = []
-            for i in range(num_variations):
-                fallback_variations.append({
-                    "subgenre": f"{super_genre} Style {i+1}",
-                    "description": f"Variation {i+1} of {super_genre} with unique characteristics"
-                })
-
-            logger.error(f"⚠️ Returning {len(fallback_variations)} generic fallback variations")
-            return fallback_variations
+            # DO NOT USE FALLBACK - Raise exception so we can see the actual problem
+            raise Exception(f"AI generation failed for genre '{super_genre}': {str(e)}")
 
     async def _save_to_sheets(self, project: Project) -> bool:
         """Save project to Google Sheets"""

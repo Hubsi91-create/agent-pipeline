@@ -190,6 +190,71 @@ class SunoPromptGeneratorService:
             logger.error(f"Failed to get Few-Shot examples: {e}")
             return self.FALLBACK_EXAMPLES[:num_examples]
 
+    def _calculate_lyrics_guidelines(self, tempo_str: Optional[str]) -> str:
+        """
+        Calculates word count guidelines based on BPM/Tempo for a 3:00 minute track.
+        Returns a string describing the target word counts for the model.
+        """
+        # Defaults
+        bpm = 105  # Medium
+        wpm = 150
+        bpm_category = "Medium"
+
+        # Parse tempo input
+        if tempo_str:
+            t_lower = tempo_str.lower()
+            if "slow" in t_lower or "ballad" in t_lower:
+                bpm = 80
+                wpm = 130
+                bpm_category = "Slow"
+            elif "fast" in t_lower or "upbeat" in t_lower or "energetic" in t_lower:
+                bpm = 135
+                wpm = 170
+                bpm_category = "Fast"
+            
+            # Try to parse exact number if present
+            import re
+            match = re.search(r'\d+', tempo_str)
+            if match:
+                bpm_val = int(match.group())
+                bpm = bpm_val
+                if bpm <= 90:
+                    wpm = 130
+                    bpm_category = "Slow"
+                elif bpm >= 120:
+                    wpm = 170
+                    bpm_category = "Fast"
+                else:
+                    wpm = 150
+                    bpm_category = "Medium"
+
+        # Target duration 3:00 (3.0 mins)
+        duration = 3.0
+        total_words = int(wpm * duration)
+        
+        # Distribution for 3:00 min structure
+        v_words = int(total_words * 0.18)  # ~80-90 words
+        pc_words = int(total_words * 0.09) # ~40-50 words
+        c_words = int(total_words * 0.20)  # ~90-100 words
+        b_words = int(total_words * 0.15)  # ~70 words
+        o_words = int(total_words * 0.05)  # ~25 words
+        
+        return f"""TARGET SPECS:
+- Duration: ~3:00 Minutes
+- Category: {bpm_category} (~{bpm} BPM)
+- Total Words: ~{total_words} (based on {wpm} WpM)
+
+MANDATORY SECTION LENGTHS:
+[Intro] (Instrumental - 10s)
+[Verse 1] ({v_words}-{v_words+15} words) -> Establish theme & story
+[Pre-Chorus] ({pc_words}-{pc_words+10} words) -> Build tension
+[Chorus] ({c_words}-{c_words+15} words) -> Main hook, emotional peak
+[Verse 2] ({v_words}-{v_words+15} words) -> Develop story details
+[Chorus] ({c_words}-{c_words+15} words) -> Repeat hook
+[Bridge] ({b_words}-{b_words+10} words) -> Contrast, emotional shift
+[Final Chorus] ({c_words}-{c_words+15} words) -> Climax
+[Outro] ({o_words}-{o_words+10} words) -> Fade out"""
+
     def _build_few_shot_prompt(
         self,
         examples: List[SunoPromptExample],
@@ -200,15 +265,18 @@ class SunoPromptGeneratorService:
 
         Structure:
         1. System role definition
-        2. Few-Shot examples (the "learning" part)
+        2. Few-Shot examples (the "learning" part - STYLE ONLY)
         3. Task specification
-        4. Output format instructions
+        4. Output format instructions (STRICT STRUCTURE)
         """
         # Format examples
         examples_text = "\n\n".join([
             f"EXAMPLE {i+1} (Genre: {ex.genre}, Quality: {ex.quality_score}/10):\n{ex.prompt_text}"
             for i, ex in enumerate(examples)
         ])
+
+        # Calculate strict structure guidelines
+        structure_guidelines = self._calculate_lyrics_guidelines(request.tempo)
 
         # Build additional context
         context_parts = []
@@ -224,32 +292,43 @@ class SunoPromptGeneratorService:
         context = "\n".join(context_parts) if context_parts else "Creative freedom encouraged"
 
         # The Few-Shot prompt
-        prompt = f"""You are an expert Suno v5 prompt engineer specializing in creating engaging, high-quality music prompts.
+        prompt = f"""You are an expert Suno v5 prompt engineer specializing in creating engaging, high-quality music prompts for Custom Mode.
 
-**LEARN FROM THESE BEST PRACTICE EXAMPLES:**
+**LEARN FROM THESE BEST PRACTICE EXAMPLES (FOR LYRICAL STYLE ONLY):**
+(Note: Ignore the formatting of these examples. Only copy their creative quality, rhyme schemes, and imagery.)
 
 {examples_text}
 
 ---
 
 **YOUR TASK:**
-Generate a NEW Suno v5 prompt for the following requirements:
-
+Generate a complete Suno Custom Mode prompt for:
 Genre: {request.target_genre}
 {context}
 
-**QUALITY STANDARDS (learned from examples above):**
-1. Use clear structure markers ([Verse], [Chorus], [Bridge])
-2. Create vivid, sensory imagery
-3. Maintain consistent theme and emotion
-4. Use poetic but accessible language
-5. Include dynamic contrast between sections
-6. Keep lines concise and rhythmic
+**MANDATORY OUTPUT STRUCTURE:**
+You must output exactly 3 sections: 'Style of Music', 'Lyrics', and 'Advanced Options'.
+
+{structure_guidelines}
+
+**SECTION 1: Style of Music**
+Format: [Genre], [Sub-Genre], [BPM], [Mood], [Instrumentation], [Vocal Style]
+(Max 200 chars. Example: "Reggaeton, Trap Latino, 92 BPM, gritty, 808 bass, confident female vocals")
+
+**SECTION 2: Lyrics**
+- Write full lyrics following the MANDATORY SECTION LENGTHS above.
+- Include [Square Bracket] tags for every section.
+- Ensure the word count matches the target for the tempo (Fast songs need MORE words).
+- Lyrical Style: Vivid, sensory, rhythmic, high-quality (like the examples).
+
+**SECTION 3: Advanced Options**
+Vocal Gender: [Male/Female]
+Lyrics Mode: Manual
+Weirdness: [Number 30-70]
+Style Influence: [Number 40-80]
 
 **OUTPUT:**
-Generate ONLY the prompt text (with structure markers). Make it unique while following the quality patterns from the examples.
-
-Prompt:"""
+Generate the full response below, starting with 'Style of Music:'. Do not include any conversational text."""
 
         return prompt
 

@@ -27,6 +27,7 @@ from queue import Queue
 
 # Direct imports from backend services
 from app.agents.agent_1_project_manager.service import agent1_service
+from app.agents.suno_prompt_generator.service import SunoPromptGeneratorService
 from app.agents.agent_3_audio_analyzer.service import agent3_service
 from app.agents.agent_4_scene_breakdown.service import agent4_service
 from app.agents.agent_5_style_anchors.service import agent5_service
@@ -36,7 +37,11 @@ from app.agents.agent_8_refiner.service import agent8_service
 from app.agents.agent_9_capcut.service import agent9_service
 from app.agents.agent_10_youtube.service import agent10_service
 from app.infrastructure.external_services.gemini_service import gemini_service
+from app.models.data_models import SunoPromptRequest
 from app.utils.logger import setup_logger
+
+# Initialize Suno service
+suno_service = SunoPromptGeneratorService()
 
 logger = setup_logger("DesktopApp")
 
@@ -240,12 +245,13 @@ class PhoenixDesktopApp:
         status_frame = ctk.CTkFrame(header, fg_color=COLORS["border"], corner_radius=20)
         status_frame.grid(row=0, column=1, sticky="e", padx=30, pady=20)
 
-        ctk.CTkLabel(
+        self.status_label = ctk.CTkLabel(
             status_frame,
             text="● SYSTEM ONLINE",
             font=ctk.CTkFont(size=12),
             text_color=COLORS["success"],
-        ).pack(padx=15, pady=8)
+        )
+        self.status_label.pack(padx=15, pady=8)
 
     def clear_content(self):
         """Clear current content frame"""
@@ -464,8 +470,28 @@ class PhoenixDesktopApp:
             self.content_frame,
             fg_color=COLORS["bg_glass"],
             corner_radius=10,
+            height=400,
         )
-        self.variations_frame.pack(fill="both", expand=True, pady=20)
+        self.variations_frame.pack(fill="both", expand=False, pady=20)
+
+        # Suno Prompts Output Section
+        ctk.CTkLabel(
+            self.content_frame,
+            text="📝 GENERATED SUNO PROMPTS",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=COLORS["accent_magenta"],
+        ).pack(pady=(20, 10))
+
+        self.suno_output = ctk.CTkTextbox(
+            self.content_frame,
+            fg_color=COLORS["bg_glass"],
+            text_color=COLORS["text_primary"],
+            font=ctk.CTkFont(family="Consolas", size=11),
+            wrap="word",
+            activate_scrollbars=True,
+            height=200,
+        )
+        self.suno_output.pack(fill="both", expand=True, pady=10)
 
     def generate_variations(self):
         """Generate genre variations"""
@@ -481,7 +507,12 @@ class PhoenixDesktopApp:
         try:
             self.root.after(0, lambda: self._show_status(f"Synthesizing {genre} variations..."))
 
+            logger.info(f"Starting genre generation for: {genre}")
             variations = await agent1_service.generate_genre_variations(genre, num_variations=20)
+            
+            if not variations:
+                raise ValueError("Received empty variations list from service")
+
             self.state["genre_variations"] = variations
             self.state["selected_supergenre"] = genre
 
@@ -489,8 +520,25 @@ class PhoenixDesktopApp:
             self.root.after(0, lambda: self._show_status(f"✓ Generated {len(variations)} variations"))
 
         except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            
+            # Log to application logger
             logger.error(f"Variation generation error: {e}")
+            logger.error(f"Traceback: {error_trace}")
+            
+            # Force print to real terminal (bypass all loggers)
+            print(f"CRITICAL ERROR in Generate Variations:\n{error_trace}", file=sys.__stdout__)
+            
+            # Update status bar
             self.root.after(0, lambda: self._show_status(f"✗ Error: {str(e)}"))
+            
+            # Show popup alert
+            def show_error_popup():
+                from tkinter import messagebox
+                messagebox.showerror("Generation Failed", f"An error occurred:\n{str(e)}\n\nSee console for details.")
+            
+            self.root.after(0, show_error_popup)
 
     def _display_variations(self):
         """Display genre variations with checkboxes for selection"""
@@ -585,15 +633,127 @@ class PhoenixDesktopApp:
         logger.info("Selected all genre variations")
 
     def confirm_genre_selection(self):
-        """Confirm selected genres and save to state"""
+        """Confirm selected genres and generate Suno prompts"""
         selected = []
         for checkbox_data in self.genre_checkboxes:
             if checkbox_data["var"].get() == 1:
                 selected.append(checkbox_data["variation"])
 
+        if not selected:
+            logger.warning("No genres selected")
+            self._show_status("⚠️ Please select at least one subgenre")
+            return
+
         self.state["selected_variations"] = selected
         logger.info(f"✓ Confirmed {len(selected)} genre selections: {[v['subgenre'] for v in selected]}")
-        self._show_status(f"✓ Selected {len(selected)} subgenres")
+        self._show_status(f"🎵 Generating Suno prompts for {len(selected)} subgenres...")
+
+        # Clear previous output
+        if hasattr(self, 'suno_output'):
+            self.suno_output.delete("0.0", "end")
+            self.suno_output.insert("0.0", "🔄 Generating prompts...\n\n")
+
+        # Generate prompts asynchronously
+        self.run_async(self._generate_suno_prompts_async(selected))
+
+    async def _generate_suno_prompts_async(self, selected_genres: List[Dict]):
+        """Generate Suno prompts for selected genres"""
+        try:
+            results = []
+
+            for i, genre_data in enumerate(selected_genres, 1):
+                subgenre = genre_data.get("subgenre", "Unknown")
+                description = genre_data.get("description", "")
+
+                logger.info(f"📝 Generating prompt {i}/{len(selected_genres)}: {subgenre}")
+
+                # Update progress
+                progress_msg = f"🔄 Generating prompt {i}/{len(selected_genres)}: {subgenre}..."
+                self.root.after(0, lambda msg=progress_msg: self._show_status(msg))
+
+                # Create Suno prompt request
+                request = SunoPromptRequest(
+                    target_genre=subgenre,
+                    mood=None,  # Can be extended with mood selection
+                    tempo=None,  # Can be extended with tempo selection
+                    additional_instructions=description
+                )
+
+                # Call Suno Prompt Generator
+                result = await suno_service.generate_prompt(request)
+
+                results.append({
+                    "subgenre": subgenre,
+                    "prompt": result
+                })
+
+            # Display results
+            self.root.after(0, lambda: self._display_suno_prompts(results))
+            self.root.after(0, lambda: self._show_status(f"✅ Generated {len(results)} Suno prompts"))
+
+        except Exception as e:
+            logger.error(f"❌ Suno prompt generation failed: {e}")
+            self.root.after(0, lambda: self._show_status(f"✗ Error: {str(e)}"))
+            self.root.after(0, lambda: self._display_suno_error(str(e)))
+
+    def _display_suno_prompts(self, results: List[Dict]):
+        """Display generated Suno prompts"""
+        if not hasattr(self, 'suno_output'):
+            return
+
+        self.suno_output.delete("0.0", "end")
+
+        output_text = "=" * 80 + "\n"
+        output_text += "🎵 GENERATED SUNO PROMPTS\n"
+        output_text += "=" * 80 + "\n\n"
+
+        for i, result in enumerate(results, 1):
+            subgenre = result.get("subgenre", "Unknown")
+            prompt_response = result.get("prompt")  # SunoPromptResponse object
+
+            output_text += f"{i}. {subgenre}\n"
+            output_text += "-" * 80 + "\n"
+
+            # Extract prompt text and metadata
+            if prompt_response:
+                prompt_text = prompt_response.prompt_text if hasattr(prompt_response, 'prompt_text') else str(prompt_response)
+                status = prompt_response.status if hasattr(prompt_response, 'status') else "UNKNOWN"
+                mood = prompt_response.mood if hasattr(prompt_response, 'mood') else None
+                tempo = prompt_response.tempo if hasattr(prompt_response, 'tempo') else None
+
+                # Display metadata
+                metadata = []
+                if mood:
+                    metadata.append(f"Mood: {mood}")
+                if tempo:
+                    metadata.append(f"Tempo: {tempo}")
+                metadata.append(f"Status: {status}")
+
+                if metadata:
+                    output_text += f"METADATA: {' | '.join(metadata)}\n\n"
+
+                output_text += f"PROMPT:\n{prompt_text}\n\n"
+            else:
+                output_text += "ERROR: No prompt generated\n\n"
+
+            output_text += "=" * 80 + "\n\n"
+
+        self.suno_output.insert("0.0", output_text)
+        logger.info(f"✅ Displayed {len(results)} Suno prompts")
+
+    def _display_suno_error(self, error_msg: str):
+        """Display error message in Suno output"""
+        if not hasattr(self, 'suno_output'):
+            return
+
+        self.suno_output.delete("0.0", "end")
+        error_text = "=" * 80 + "\n"
+        error_text += "❌ SUNO PROMPT GENERATION FAILED\n"
+        error_text += "=" * 80 + "\n\n"
+        error_text += f"Error: {error_msg}\n\n"
+        error_text += "Please check the logs for more details.\n"
+
+        self.suno_output.insert("0.0", error_text)
 
     # ================================
     # VIEW 3: AUDIO ANALYSIS
@@ -696,53 +856,158 @@ class PhoenixDesktopApp:
         self.run_async(self._analyze_audio_async(file_path))
 
     async def _analyze_audio_async(self, file_path: str):
-        """Async audio analysis"""
+        """Async audio analysis with scene breakdown"""
         try:
-            # Call Agent 3 for audio analysis
-            result = await agent3_service.analyze_audio(file_path)
+            # Step 1: Read audio file as bytes
+            logger.info(f"📂 Reading audio file: {file_path}")
+            with open(file_path, 'rb') as f:
+                audio_bytes = f.read()
+
+            # Step 2: Call Agent 3 for audio analysis
+            logger.info("🎵 Analyzing audio with Agent 3...")
+            self.root.after(0, lambda: self._show_status("🎵 Analyzing audio waveform..."))
+
+            audio_analysis = await agent3_service.analyze_audio_file(audio_bytes, file_path)
+
+            # Step 3: Call Agent 4 for scene breakdown
+            logger.info("🎬 Processing scenes with Agent 4...")
+            self.root.after(0, lambda: self._show_status("🎬 Processing scene breakdown..."))
+
+            scene_breakdown = await agent4_service.process_scenes(
+                audio_analysis=audio_analysis,
+                genre=self.state.get("selected_supergenre", "Unknown")
+            )
+
+            # Combine results
+            combined_results = {
+                "audio_analysis": audio_analysis,
+                "scene_breakdown": scene_breakdown,
+                "scenes": scene_breakdown.get("scenes", [])
+            }
+
+            # Store in state
+            self.state["audio_scenes"] = combined_results
 
             # Display results in UI
-            self.root.after(0, lambda: self._display_audio_results(result))
-            self.root.after(0, lambda: self._show_status("✓ Audio analysis completed"))
+            self.root.after(0, lambda: self._display_audio_results(combined_results))
+            self.root.after(0, lambda: self._show_status("✅ Audio analysis & scene breakdown completed"))
 
         except Exception as e:
-            logger.error(f"Audio analysis error: {e}")
+            logger.error(f"❌ Audio analysis error: {e}")
+            import traceback
+            traceback.print_exc()
             self.root.after(0, lambda: self._show_status(f"✗ Error: {str(e)}"))
             self.root.after(0, lambda: self._display_audio_error(str(e)))
 
     def _display_audio_results(self, result):
-        """Display audio analysis results"""
+        """Display audio analysis results with scene breakdown"""
         for widget in self.audio_results_frame.winfo_children():
             widget.destroy()
 
         # Title
         ctk.CTkLabel(
             self.audio_results_frame,
-            text="📊 ANALYSIS RESULTS",
+            text="📊 AUDIO ANALYSIS & SCENE BREAKDOWN",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=COLORS["accent_cyan"],
         ).pack(pady=10)
 
-        # Display scenes if available
+        # Audio Analysis Summary
+        audio_analysis = result.get("audio_analysis", {})
+        if audio_analysis:
+            summary_frame = ctk.CTkFrame(self.audio_results_frame, fg_color=COLORS["border"], corner_radius=8)
+            summary_frame.pack(fill="x", pady=10, padx=10)
+
+            ctk.CTkLabel(
+                summary_frame,
+                text="🎵 Audio Properties",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color=COLORS["accent_magenta"],
+            ).pack(anchor="w", padx=15, pady=5)
+
+            # Display key audio properties
+            duration = audio_analysis.get("duration", "N/A")
+            bpm = audio_analysis.get("bpm", "N/A")
+            key = audio_analysis.get("key", "N/A")
+
+            info_text = f"Duration: {duration} | BPM: {bpm} | Key: {key}"
+            ctk.CTkLabel(
+                summary_frame,
+                text=info_text,
+                font=ctk.CTkFont(size=12),
+                text_color=COLORS["text_secondary"],
+            ).pack(anchor="w", padx=15, pady=(0, 10))
+
+        # Scene Breakdown
         scenes = result.get("scenes", [])
         if scenes:
+            ctk.CTkLabel(
+                self.audio_results_frame,
+                text=f"🎬 Scene Breakdown ({len(scenes)} scenes)",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color=COLORS["accent_cyan"],
+            ).pack(pady=(10, 5))
+
             for i, scene in enumerate(scenes):
                 scene_card = ctk.CTkFrame(self.audio_results_frame, fg_color=COLORS["border"], corner_radius=8)
                 scene_card.pack(fill="x", pady=5, padx=10)
 
-                ctk.CTkLabel(
-                    scene_card,
-                    text=f"Scene {i+1}: {scene.get('timestamp', '')}",
-                    font=ctk.CTkFont(size=14, weight="bold"),
-                    text_color=COLORS["text_primary"],
-                ).pack(anchor="w", padx=15, pady=5)
+                # Header with scene number and timestamp
+                header_frame = ctk.CTkFrame(scene_card, fg_color="transparent")
+                header_frame.pack(fill="x", padx=15, pady=5)
+
+                start_time = scene.get("start_time", "0:00")
+                end_time = scene.get("end_time", "0:00")
+                energy = scene.get("energy_level", "Medium")
+
+                # Energy color coding
+                energy_colors = {
+                    "Low": COLORS["text_secondary"],
+                    "Medium": "#ffaa00",
+                    "High": COLORS["error"],
+                    "Very High": COLORS["error"]
+                }
+                energy_color = energy_colors.get(energy, COLORS["text_secondary"])
 
                 ctk.CTkLabel(
-                    scene_card,
-                    text=scene.get("description", ""),
+                    header_frame,
+                    text=f"Scene {i+1}",
+                    font=ctk.CTkFont(size=14, weight="bold"),
+                    text_color=COLORS["text_primary"],
+                ).pack(side="left")
+
+                ctk.CTkLabel(
+                    header_frame,
+                    text=f"{start_time} → {end_time}",
                     font=ctk.CTkFont(size=12),
+                    text_color=COLORS["accent_cyan"],
+                ).pack(side="left", padx=10)
+
+                ctk.CTkLabel(
+                    header_frame,
+                    text=f"⚡ {energy}",
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    text_color=energy_color,
+                ).pack(side="right")
+
+                # Description
+                description = scene.get("description", "No description available")
+                ctk.CTkLabel(
+                    scene_card,
+                    text=description,
+                    font=ctk.CTkFont(size=11),
                     text_color=COLORS["text_secondary"],
+                    wraplength=800,
+                    justify="left",
                 ).pack(anchor="w", padx=15, pady=(0, 10))
+
+        else:
+            ctk.CTkLabel(
+                self.audio_results_frame,
+                text="No scenes detected",
+                font=ctk.CTkFont(size=12),
+                text_color=COLORS["text_secondary"],
+            ).pack(pady=20)
 
     def _display_audio_error(self, error_msg: str):
         """Display error message in audio results frame"""
@@ -990,8 +1255,17 @@ class PhoenixDesktopApp:
     # ================================
     def _show_status(self, message: str):
         """Display status message in header"""
-        # TODO: Implement status bar or notification system
         logger.info(f"Status: {message}")
+        
+        if hasattr(self, 'status_label'):
+            # Determine color based on message content
+            color = COLORS["success"]
+            if "error" in message.lower() or "failed" in message.lower() or "✗" in message:
+                color = COLORS["error"]
+            elif "scanning" in message.lower() or "generating" in message.lower() or "analyzing" in message.lower():
+                color = COLORS["accent_cyan"]
+                
+            self.status_label.configure(text=f"● {message}", text_color=color)
 
     def run_async(self, coro):
         """Run async coroutine in background thread"""

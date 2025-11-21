@@ -417,18 +417,12 @@ async def generate_genre_variations(request: Dict[str, Any]):
         raise
     except Exception as e:
         logger.error(f"Failed to generate genre variations: {e}")
-        # FALLBACK: Return generic variations instead of HTTP 500
-        fallback_variations = []
-        for i in range(min(num_variations, 10)):
-            fallback_variations.append({
-                "subgenre": f"{super_genre} Style {i+1}",
-                "description": f"Variation {i+1} of {super_genre} with unique characteristics"
-            })
-        logger.warning(f"Using fallback variations for {super_genre}")
-        return APIResponse(
-            success=True,
-            message=f"Generated {len(fallback_variations)} {super_genre} variations (fallback mode)",
-            data=fallback_variations
+        import traceback
+        logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        # DO NOT USE FALLBACK - Let the user see the real error
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI generation failed: {str(e)}"
         )
 
 
