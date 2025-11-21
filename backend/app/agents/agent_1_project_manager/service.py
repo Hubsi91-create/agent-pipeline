@@ -524,8 +524,8 @@ Respond with pure JSON only:"""
 
     async def generate_genre_variations(self, super_genre: str, num_variations: int = 20) -> List[Dict[str, str]]:
         """
-        Generate music genre variations for a given super genre using AI
-        ALWAYS uses Gemini AI for fresh, creative variations
+        Generate music genre variations for a given super genre
+        Hybrid Strategy: Check static database first, then use AI for unknown genres
 
         Args:
             super_genre: Main genre (e.g., "Electronic", "HipHop")
@@ -534,7 +534,17 @@ Respond with pure JSON only:"""
         Returns:
             List of genre variations with descriptions
         """
-        logger.info(f"🎵 Generating {num_variations} AI variations for: {super_genre}")
+        logger.info(f"🎵 Generating {num_variations} variations for: {super_genre}")
+
+        # STRATEGY 1: Check static database first (instant, no API calls)
+        if super_genre in STATIC_SUBGENRES:
+            logger.info(f"✅ Found {super_genre} in static database - returning curated subgenres")
+            static_variations = STATIC_SUBGENRES[super_genre]
+            # Return the requested number (or all if fewer available)
+            return static_variations[:num_variations]
+
+        # STRATEGY 2: Not in static DB - use AI generation
+        logger.info(f"⚠️ {super_genre} not in static database - calling AI for generation")
 
         prompt = f"""You are a music trend expert and genre specialist with deep knowledge of subgenres.
 

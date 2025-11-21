@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(timeout:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []

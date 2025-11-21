@@ -50,25 +50,48 @@ class GoogleSheetService:
             self._initialized = True
 
     def _initialize(self):
-        """Initialize Google Sheets connection"""
+        """Initialize Google Sheets connection using Application Default Credentials (ADC)"""
         self.client: Optional[gspread.Client] = None
         self.spreadsheet: Optional[gspread.Spreadsheet] = None
 
         try:
-            creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
             sheet_id = os.getenv("GOOGLE_SHEET_ID")
 
-            if not creds_path or not sheet_id:
-                logger.warning("Google Sheets credentials not configured. Using in-memory storage.")
+            if not sheet_id:
+                logger.warning("GOOGLE_SHEET_ID not configured. Using in-memory storage.")
                 return
 
-            # Set up credentials
+            # Set up credentials - Try multiple authentication methods
             scopes = [
                 'https://www.googleapis.com/auth/spreadsheets',
                 'https://www.googleapis.com/auth/drive'
             ]
 
-            credentials = Credentials.from_service_account_file(creds_path, scopes=scopes)
+            credentials = None
+
+            # Method 1: Try Application Default Credentials (ADC) first
+            # This works automatically after 'gcloud auth application-default login'
+            try:
+                from google.auth import default
+                credentials, project = default(scopes=scopes)
+                logger.info("Using Application Default Credentials (ADC)")
+            except Exception as adc_error:
+                logger.warning(f"ADC not available: {adc_error}")
+
+                # Method 2: Fallback to service account file if GOOGLE_APPLICATION_CREDENTIALS is set
+                creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+                if creds_path:
+                    try:
+                        credentials = Credentials.from_service_account_file(creds_path, scopes=scopes)
+                        logger.info("Using Service Account credentials from file")
+                    except Exception as file_error:
+                        logger.error(f"Service Account file auth failed: {file_error}")
+                        return
+
+            if not credentials:
+                logger.warning("No valid credentials found. Using in-memory storage.")
+                return
+
             self.client = gspread.authorize(credentials)
             self.spreadsheet = self.client.open_by_key(sheet_id)
 
